@@ -34,6 +34,7 @@
  *						status etc.
  */
 
+#define DEBUG
 #define pr_fmt(fmt) "IPv6: " fmt
 
 #include <linux/errno.h>
@@ -89,6 +90,7 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/export.h>
+#include <qp/qp.h>
 
 #define	INFINITY_LIFE_TIME	0xFFFFFFFF
 
@@ -1109,8 +1111,10 @@ ipv6_add_addr(struct inet6_dev *idev, struct ifa6_config *cfg,
 	ifa->rt_priority = cfg->rt_priority;
 	ifa->flags = cfg->ifa_flags;
 	/* No need to add the TENTATIVE flag for addresses with NODAD */
-	if (!(cfg->ifa_flags & IFA_F_NODAD))
+	if (!(cfg->ifa_flags & IFA_F_NODAD)) { 
+		QP_PRINT_LOC("init tentative %pI6\n", &ifa->addr);
 		ifa->flags |= IFA_F_TENTATIVE;
+	}
 	ifa->valid_lft = cfg->valid_lft;
 	ifa->prefered_lft = cfg->preferred_lft;
 	ifa->cstamp = ifa->tstamp = jiffies;
@@ -1153,6 +1157,7 @@ ipv6_add_addr(struct inet6_dev *idev, struct ifa6_config *cfg,
 	 * Send a netlink notification in all cases in order to allow userspace
 	 * to monitor tentative addresses.
 	 */
+	QP_PRINT_LOC("call ipv6_ifa_notify");
 	ipv6_ifa_notify(0, ifa);
 
 out:
@@ -1296,6 +1301,7 @@ static void ipv6_del_addr(struct inet6_ifaddr *ifp)
 
 	addrconf_del_dad_work(ifp);
 
+	QP_TRACE();
 	ipv6_ifa_notify(RTM_DELADDR, ifp);
 
 	inet6addr_notifier_call_chain(NETDEV_DOWN, ifp);
@@ -2043,6 +2049,7 @@ struct inet6_ifaddr *ipv6_get_ifaddr(struct net *net, const struct in6_addr *add
 
 static void addrconf_dad_stop(struct inet6_ifaddr *ifp, int dad_failed)
 {
+	QP_TRACE();
 	if (dad_failed)
 		ifp->flags |= IFA_F_DADFAILED;
 
@@ -2062,12 +2069,15 @@ static void addrconf_dad_stop(struct inet6_ifaddr *ifp, int dad_failed)
 	} else if (ifp->flags&IFA_F_PERMANENT || !dad_failed) {
 		spin_lock_bh(&ifp->lock);
 		addrconf_del_dad_work(ifp);
+		QP_PRINT_LOC("mark tentative %pI6\n", &ifp->addr);
 		ifp->flags |= IFA_F_TENTATIVE;
 		if (dad_failed)
 			ifp->flags &= ~IFA_F_OPTIMISTIC;
 		spin_unlock_bh(&ifp->lock);
-		if (dad_failed)
+		if (dad_failed) {
+			QP_TRACE();
 			ipv6_ifa_notify(0, ifp);
+		}
 		in6_ifa_put(ifp);
 	} else {
 		ipv6_del_addr(ifp);
@@ -2552,8 +2562,12 @@ static void manage_tempaddrs(struct inet6_dev *idev,
 			ift->flags &= ~IFA_F_DEPRECATED;
 
 		spin_unlock(&ift->lock);
-		if (!(flags&IFA_F_TENTATIVE))
+		if (!(flags&IFA_F_TENTATIVE)) {
+			QP_PRINT_LOC("notify tentative\n");
 			ipv6_ifa_notify(0, ift);
+		} else {
+			QP_PRINT_LOC("skip tentative\n");
+		}
 	}
 
 	if ((create || list_empty(&idev->tempaddr_list)) &&
@@ -2648,8 +2662,12 @@ int addrconf_prefix_rcv_add_addr(struct net *net, struct net_device *dev,
 			ifp->flags &= ~IFA_F_DEPRECATED;
 			spin_unlock_bh(&ifp->lock);
 
-			if (!(flags&IFA_F_TENTATIVE))
+			if (!(flags&IFA_F_TENTATIVE)) {
+				QP_PRINT_LOC("notify tentative\n");
 				ipv6_ifa_notify(0, ifp);
+			} else {
+				QP_PRINT_LOC("skip tentative\n");
+			}
 		} else
 			spin_unlock_bh(&ifp->lock);
 
@@ -3073,9 +3091,11 @@ static void add_addr(struct inet6_dev *idev, const struct in6_addr *addr,
 		.scope = scope
 	};
 
+	QP_PRINT_LOC("addr=%pI6/%d\n", addr, plen);
 	ifp = ipv6_add_addr(idev, &cfg, true, NULL);
 	if (!IS_ERR(ifp)) {
 		spin_lock_bh(&ifp->lock);
+		QP_PRINT_LOC("clear tentative\n");
 		ifp->flags &= ~IFA_F_TENTATIVE;
 		spin_unlock_bh(&ifp->lock);
 		rt_genid_bump_ipv6(dev_net(idev->dev));
@@ -3800,8 +3820,10 @@ restart:
 			/* set state to skip the notifier below */
 			state = INET6_IFADDR_STATE_DEAD;
 			ifa->state = INET6_IFADDR_STATE_PREDAD;
-			if (!(ifa->flags & IFA_F_NODAD))
+			if (!(ifa->flags & IFA_F_NODAD)) {
+				QP_PRINT_LOC("mark tentative\n");
 				ifa->flags |= IFA_F_TENTATIVE;
+			}
 
 			rt = ifa->rt;
 			ifa->rt = NULL;
@@ -3993,8 +4015,12 @@ static void addrconf_dad_begin(struct inet6_ifaddr *ifp)
 out:
 	spin_unlock(&ifp->lock);
 	read_unlock_bh(&idev->lock);
-	if (notify)
+	if (notify) {
+		QP_TRACE();
 		ipv6_ifa_notify(RTM_NEWADDR, ifp);
+	} else {
+		QP_TRACE();
+	}
 }
 
 static void addrconf_dad_start(struct inet6_ifaddr *ifp)
@@ -4153,6 +4179,7 @@ static void addrconf_dad_completed(struct inet6_ifaddr *ifp, bool bump_id,
 	 *	Configure the address for reception. Now it is valid.
 	 */
 
+	QP_TRACE();
 	ipv6_ifa_notify(RTM_NEWADDR, ifp);
 
 	/* If added prefix is link local and we are prepared to process
@@ -4506,7 +4533,7 @@ restart:
 
 				if (deprecate) {
 					in6_ifa_hold(ifp);
-
+					QP_TRACE();
 					ipv6_ifa_notify(0, ifp);
 					in6_ifa_put(ifp);
 					goto restart;
@@ -4736,8 +4763,12 @@ static int inet6_addr_modify(struct inet6_ifaddr *ifp, struct ifa6_config *cfg)
 		ifp->peer_addr = *cfg->peer_pfx;
 
 	spin_unlock_bh(&ifp->lock);
-	if (!(ifp->flags&IFA_F_TENTATIVE))
+	if (!(ifp->flags&IFA_F_TENTATIVE)) {
+		QP_PRINT_LOC("notify tentative\n");
 		ipv6_ifa_notify(0, ifp);
+	} else {
+		QP_PRINT_LOC("skip notify tentative\n");
+	}
 
 	if (!(cfg->ifa_flags & IFA_F_NOPREFIXROUTE)) {
 		int rc = -ENOENT;
@@ -5427,6 +5458,7 @@ static void inet6_ifa_notify(int event, struct inet6_ifaddr *ifa)
 	};
 	int err = -ENOBUFS;
 
+	QP_PRINT_LOC("real event=%d ifa=%px addr=%pI6 flags=0x%x\n", event, ifa, &ifa->addr, ifa->flags);
 	skb = nlmsg_new(inet6_ifaddr_msgsize(), GFP_ATOMIC);
 	if (!skb)
 		goto errout;
@@ -6091,6 +6123,8 @@ static void __ipv6_ifa_notify(int event, struct inet6_ifaddr *ifp)
 
 static void ipv6_ifa_notify(int event, struct inet6_ifaddr *ifp)
 {
+	QP_PRINT_LOC("event=%d ifp=%px addr=%pI6 flags=0x%x\n",
+			event, ifp, &ifp->addr, ifp->flags);
 	rcu_read_lock_bh();
 	if (likely(ifp->idev->dead == 0))
 		__ipv6_ifa_notify(event, ifp);
