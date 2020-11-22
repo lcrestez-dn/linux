@@ -9,6 +9,7 @@
  * Re-worked by Ben Greear <greearb@candelatech.com>
  * ---
  */
+#define DEBUG
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/module.h>
@@ -32,6 +33,8 @@
 #include <net/xfrm.h>
 #include <linux/netpoll.h>
 #include <linux/phy.h>
+
+#include <qp/qp.h>
 
 #define MACVLAN_HASH_BITS	8
 #define MACVLAN_HASH_SIZE	(1<<MACVLAN_HASH_BITS)
@@ -272,12 +275,22 @@ static void macvlan_broadcast(struct sk_buff *skb,
 
 	for (i = 0; i < MACVLAN_HASH_SIZE; i++) {
 		hlist_for_each_entry_rcu(vlan, &port->vlan_hash[i], hlist) {
-			if (vlan->dev == src || !(vlan->mode & mode))
+			QP_PRINT_LOC("src=%s vlan->dev=%s ->mode=0x%x mode=0x%x\n",
+					src ? netdev_name(src) : "NULL",
+					netdev_name(vlan->dev),
+					vlan->mode,
+					mode);
+			if (vlan->dev == src || !(vlan->mode & mode)) {
+				QP_PRINT_LOC("BCAST skip mode\n");
 				continue;
+			}
 
+			QP_DUMP_ETH_HDR(eth);
 			hash = mc_hash(vlan, eth->h_dest);
-			if (!test_bit(hash, vlan->mc_filter))
+			if (!test_bit(hash, vlan->mc_filter)) {
+				QP_PRINT_LOC("BCAST skip mc_filter\n");
 				continue;
+			}
 
 			err = NET_RX_DROP;
 			nskb = skb_clone(skb, GFP_ATOMIC);
@@ -286,6 +299,7 @@ static void macvlan_broadcast(struct sk_buff *skb,
 					nskb, vlan, eth,
 					mode == MACVLAN_MODE_BRIDGE) ?:
 				      netif_rx_ni(nskb);
+			QP_PRINT_LOC("err=%d\n", err);
 			macvlan_count_rx(vlan, skb->len + ETH_HLEN,
 					 err == NET_RX_SUCCESS, true);
 		}
@@ -309,6 +323,8 @@ static void macvlan_process_broadcast(struct work_struct *w)
 		const struct macvlan_dev *src = MACVLAN_SKB_CB(skb)->src;
 
 		rcu_read_lock();
+		QP_PRINT_LOC("skb=%px\n", skb);
+		QP_DUMP_ETH_HDR(eth_hdr(skb));
 
 		if (!src)
 			/* frame comes from an external address */
@@ -357,6 +373,7 @@ static void macvlan_broadcast_enqueue(struct macvlan_port *port,
 	if (skb_queue_len(&port->bc_queue) < MACVLAN_BC_QUEUE_LEN) {
 		if (src)
 			dev_hold(src->dev);
+		QP_PRINT_LOC("enqueued nskb=%px from skb=%px on bc_queue\n", nskb, skb);
 		__skb_queue_tail(&port->bc_queue, nskb);
 		err = 0;
 	}
@@ -448,24 +465,41 @@ static rx_handler_result_t macvlan_handle_frame(struct sk_buff **pskb)
 	int ret;
 	rx_handler_result_t handle_res;
 
+	QP_PRINT_LOC("pskb=%px skb=%px dev=%s\n", pskb, skb, netdev_name(skb->dev));
+	QP_DUMP_ETH_HDR(eth);
+
 	/* Packets from dev_loopback_xmit() do not have L2 header, bail out */
-	if (unlikely(skb->pkt_type == PACKET_LOOPBACK))
+	if (unlikely(skb->pkt_type == PACKET_LOOPBACK)) {
+		QP_TRACE();
 		return RX_HANDLER_PASS;
+	}
 
 	port = macvlan_port_get_rcu(skb->dev);
 	if (is_multicast_ether_addr(eth->h_dest)) {
 		unsigned int hash;
 
+		QP_PRINT_LOC("found MCAST!\n");
 		skb = ip_check_defrag(dev_net(skb->dev), skb, IP_DEFRAG_MACVLAN);
-		if (!skb)
+		if (!skb) {
+			QP_PRINT_LOC("CONSUMED\n");
 			return RX_HANDLER_CONSUMED;
+		}
 		*pskb = skb;
 		eth = eth_hdr(skb);
 		macvlan_forward_source(skb, port, eth->h_source);
 		src = macvlan_hash_lookup(port, eth->h_source);
+		if (src) {
+			QP_PRINT_LOC("src=%p %s src->mode=%d\n",
+					src, 
+					src->dev ? netdev_name(src->dev) : "NULL",
+					src->mode);
+		} else {
+			QP_PRINT_LOC("NO SRC");
+		}
 		if (src && src->mode != MACVLAN_MODE_VEPA &&
 		    src->mode != MACVLAN_MODE_BRIDGE) {
 			/* forward to original port. */
+			QP_PRINT_LOC("LOCAL MIRROR\n");
 			vlan = src;
 			ret = macvlan_broadcast_one(skb, vlan, eth, 0) ?:
 			      netif_rx(skb);
@@ -474,9 +508,14 @@ static rx_handler_result_t macvlan_handle_frame(struct sk_buff **pskb)
 		}
 
 		hash = mc_hash(NULL, eth->h_dest);
-		if (test_bit(hash, port->mc_filter))
+		if (test_bit(hash, port->mc_filter)) {
+			QP_PRINT_LOC("ENQUEUE\n");
 			macvlan_broadcast_enqueue(port, src, skb);
+		} else {
+			QP_PRINT_LOC("NOQUEUE\n");
+		}
 
+		QP_PRINT_LOC("return PASS\n");
 		return RX_HANDLER_PASS;
 	}
 
@@ -486,11 +525,14 @@ static rx_handler_result_t macvlan_handle_frame(struct sk_buff **pskb)
 					      struct macvlan_dev, list);
 	else
 		vlan = macvlan_hash_lookup(port, eth->h_dest);
-	if (!vlan || vlan->mode == MACVLAN_MODE_SOURCE)
+	if (!vlan || vlan->mode == MACVLAN_MODE_SOURCE) {
+		QP_PRINT_LOC("return PASS\n");
 		return RX_HANDLER_PASS;
+	}
 
 	dev = vlan->dev;
 	if (unlikely(!(dev->flags & IFF_UP))) {
+		QP_PRINT_LOC("return CONS\n");
 		kfree_skb(skb);
 		return RX_HANDLER_CONSUMED;
 	}
@@ -499,6 +541,7 @@ static rx_handler_result_t macvlan_handle_frame(struct sk_buff **pskb)
 	if (!skb) {
 		ret = NET_RX_DROP;
 		handle_res = RX_HANDLER_CONSUMED;
+		QP_PRINT_LOC("return DROP\n");
 		goto out;
 	}
 
@@ -510,6 +553,7 @@ static rx_handler_result_t macvlan_handle_frame(struct sk_buff **pskb)
 	handle_res = RX_HANDLER_ANOTHER;
 out:
 	macvlan_count_rx(vlan, len, ret == NET_RX_SUCCESS, false);
+	QP_PRINT_LOC("return %d\n", ret);
 	return handle_res;
 }
 
