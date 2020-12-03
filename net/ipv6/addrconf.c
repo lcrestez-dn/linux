@@ -1148,6 +1148,13 @@ ipv6_add_addr(struct inet6_dev *idev, struct ifa6_config *cfg,
 	rcu_read_unlock_bh();
 
 	inet6addr_notifier_call_chain(NETDEV_UP, ifa);
+
+	/*
+	 * Send a netlink notification in all cases in order to allow userspace
+	 * to monitor tentative addresses.
+	 */
+	ipv6_ifa_notify(0, ifa);
+
 out:
 	if (unlikely(err < 0)) {
 		fib6_info_release(f6i);
@@ -2947,11 +2954,6 @@ static int inet6_addr_add(struct net *net, int ifindex,
 					      flags, GFP_KERNEL);
 		}
 
-		/* Send a netlink notification if DAD is enabled and
-		 * optimistic flag is not set
-		 */
-		if (!(ifp->flags & (IFA_F_OPTIMISTIC | IFA_F_NODAD)))
-			ipv6_ifa_notify(0, ifp);
 		/*
 		 * Note that section 3.1 of RFC 4429 indicates
 		 * that the Optimistic flag should not be set for
