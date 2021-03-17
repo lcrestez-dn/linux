@@ -113,6 +113,7 @@
 #include <net/secure_seq.h>
 #include <net/ip_tunnels.h>
 #include <net/l3mdev.h>
+#include <qp/qp.h>
 
 #include "fib_lookup.h"
 
@@ -638,6 +639,7 @@ static inline u32 fnhe_hashfun(__be32 daddr)
 
 static void fill_route_from_fnhe(struct rtable *rt, struct fib_nh_exception *fnhe)
 {
+	QP_PRINT_LOC("rt=%p rt_pmtu=%d\n", rt, rt->rt_pmtu);
 	rt->rt_pmtu = fnhe->fnhe_pmtu;
 	rt->dst.expires = fnhe->fnhe_expires;
 
@@ -1019,6 +1021,7 @@ static void __ip_rt_update_pmtu(struct rtable *rt, struct flowi4 *fl4, u32 mtu)
 	    time_before(jiffies, dst->expires - ip_rt_mtu_expires / 2))
 		return;
 
+	QP_PRINT_LOC("rt=%p timeout?\n", rt);
 	rcu_read_lock();
 	if (fib_lookup(dev_net(dst->dev), fl4, &res, 0) == 0) {
 		struct fib_nh *nh = &FIB_RES_NH(res);
@@ -1086,6 +1089,7 @@ void ipv4_sk_update_pmtu(struct sk_buff *skb, struct sock *sk, u32 mtu)
 	bool new = false;
 	struct net *net = sock_net(sk);
 
+	QP_PRINT_LOC("sk=%p skb=%p mtu=%u\n", sk, skb, mtu);
 	bh_lock_sock(sk);
 
 	if (!ip_sk_accept_pmtu(sk))

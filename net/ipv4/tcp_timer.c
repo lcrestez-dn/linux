@@ -21,6 +21,7 @@
 #include <linux/module.h>
 #include <linux/gfp.h>
 #include <net/tcp.h>
+#include <qp/qp.h>
 
 /**
  *  tcp_write_err() - close socket and save error info
@@ -121,6 +122,17 @@ static int tcp_orphan_retries(struct sock *sk, bool alive)
 	return retries;
 }
 
+static bool interesting_sk(struct sock *sk)
+{
+	int sport, dport;
+
+	if (sk->sk_family != AF_INET)
+		return false;
+	sport = ntohs(inet_sk(sk)->inet_sport);
+	dport = ntohs(inet_sk(sk)->inet_dport);
+	return (sport == 5001 || dport == 5001);
+}
+
 static void tcp_mtu_probing(struct inet_connection_sock *icsk, struct sock *sk)
 {
 	const struct net *net = sock_net(sk);
@@ -133,11 +145,15 @@ static void tcp_mtu_probing(struct inet_connection_sock *icsk, struct sock *sk)
 	if (!icsk->icsk_mtup.enabled) {
 		icsk->icsk_mtup.enabled = 1;
 		icsk->icsk_mtup.probe_timestamp = tcp_jiffies32;
+		if (interesting_sk(sk))
+			QP_PRINT_LOC("sk=%p\n", sk);
 	} else {
 		mss = tcp_mtu_to_mss(sk, icsk->icsk_mtup.search_low) >> 1;
 		mss = min(net->ipv4.sysctl_tcp_base_mss, mss);
 		mss = max(mss, 68 - tcp_sk(sk)->tcp_header_len);
 		icsk->icsk_mtup.search_low = tcp_mss_to_mtu(sk, mss);
+		if (interesting_sk(sk))
+			QP_PRINT_LOC("sk=%p\n", sk);
 	}
 	tcp_sync_mss(sk, icsk->icsk_pmtu_cookie);
 }

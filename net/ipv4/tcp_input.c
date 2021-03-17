@@ -78,6 +78,7 @@
 #include <linux/errqueue.h>
 #include <trace/events/tcp.h>
 #include <linux/static_key.h>
+#include <qp/qp.h>
 
 int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
 
@@ -2519,6 +2520,17 @@ static void tcp_try_to_open(struct sock *sk, int flag)
 	}
 }
 
+static bool interesting_sk(struct sock *sk)
+{
+	int sport, dport;
+
+	if (sk->sk_family != AF_INET)
+		return false;
+	sport = ntohs(inet_sk(sk)->inet_sport);
+	dport = ntohs(inet_sk(sk)->inet_dport);
+	return (sport == 5001 || dport == 5001);
+}
+
 static void tcp_mtup_probe_failed(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
@@ -2526,12 +2538,27 @@ static void tcp_mtup_probe_failed(struct sock *sk)
 	icsk->icsk_mtup.search_high = icsk->icsk_mtup.probe_size - 1;
 	icsk->icsk_mtup.probe_size = 0;
 	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMTUPFAIL);
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p mtup search = %d to %d\n",
+				sk,
+				icsk->icsk_mtup.search_low,
+				icsk->icsk_mtup.search_high);
+	}
 }
 
 static void tcp_mtup_probe_success(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
+
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p old tp->snd_cwnd=%d mss_cache=%d probe_size=%d mss_to_mtu=%d\n",
+					 sk,
+					 tp->snd_cwnd,
+					 tp->mss_cache,
+					 icsk->icsk_mtup.probe_size,
+					 tcp_mss_to_mtu(sk, tp->mss_cache));
+	}
 
 	/* FIXME: breaks with very large cwnd */
 	tp->prior_ssthresh = tcp_current_ssthresh(sk);
@@ -2546,6 +2573,14 @@ static void tcp_mtup_probe_success(struct sock *sk)
 	icsk->icsk_mtup.probe_size = 0;
 	tcp_sync_mss(sk, icsk->icsk_pmtu_cookie);
 	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMTUPSUCCESS);
+
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p snd_cwnd=%d new mtup_search_low=%d mtup_search_high=%d\n",
+				sk,
+				tp->snd_cwnd,
+				icsk->icsk_mtup.search_low,
+				icsk->icsk_mtup.search_high);
+	}
 }
 
 /* Do a simple retransmit without using the backoff mechanisms in
