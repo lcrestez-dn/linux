@@ -69,6 +69,7 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/module.h>
+#define DEBUG
 
 #ifndef ARCH_SHF_SMALL
 #define ARCH_SHF_SMALL 0
