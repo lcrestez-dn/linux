@@ -311,7 +311,7 @@ static void tcp_sndbuf_expand(struct sock *sk)
 		  SKB_DATA_ALIGN(sizeof(struct sk_buff));
 
 	nr_segs = max_t(u32, TCP_INIT_CWND, tp->snd_cwnd);
-	nr_segs = max_t(u32, nr_segs, tp->reordering + 1);
+	nr_segs = max_t(u32, nr_segs, tp->tcp_reordering + 1);
 
 	/* Fast Recovery (RFC 5681 3.2) :
 	 * Cubic needs 1.7 factor, rounded to 2 to include
@@ -869,7 +869,7 @@ static void tcp_check_sack_reordering(struct sock *sk, const u32 low_seq,
 		return;
 
 	metric = fack - low_seq;
-	if ((metric > tp->reordering * mss) && mss) {
+	if ((metric > tp->tcp_reordering * mss) && mss) {
 #if FASTRETRANS_DEBUG > 1
 		pr_debug("Disorder%d %d %u f%u s%u rr%d\n",
 			 tp->rx_opt.sack_ok, inet_csk(sk)->icsk_ca_state,
@@ -878,7 +878,7 @@ static void tcp_check_sack_reordering(struct sock *sk, const u32 low_seq,
 			 tp->sacked_out,
 			 tp->undo_marker ? tp->undo_retrans : 0);
 #endif
-		tp->reordering = min_t(u32, (metric + mss - 1) / mss,
+		tp->tcp_reordering = min_t(u32, (metric + mss - 1) / mss,
 				       sock_net(sk)->ipv4.sysctl_tcp_max_reordering);
 	}
 
@@ -1848,7 +1848,7 @@ static void tcp_check_reno_reordering(struct sock *sk, const int addend)
 	if (!tcp_limit_reno_sacked(tp))
 		return;
 
-	tp->reordering = min_t(u32, tp->packets_out + addend,
+	tp->tcp_reordering = min_t(u32, tp->packets_out + addend,
 			       sock_net(sk)->ipv4.sysctl_tcp_max_reordering);
 	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPRENOREORDER);
 }
@@ -1969,7 +1969,7 @@ void tcp_enter_loss(struct sock *sk)
 	 */
 	if (icsk->icsk_ca_state <= TCP_CA_Disorder &&
 	    tp->sacked_out >= net->ipv4.sysctl_tcp_reordering)
-		tp->reordering = min_t(unsigned int, tp->reordering,
+		tp->tcp_reordering = min_t(unsigned int, tp->tcp_reordering,
 				       net->ipv4.sysctl_tcp_reordering);
 	tcp_set_ca_state(sk, TCP_CA_Loss);
 	tp->high_seq = tp->snd_nxt;
@@ -2130,7 +2130,7 @@ static bool tcp_time_to_recover(struct sock *sk, int flag)
 		return true;
 
 	/* Not-A-Trick#2 : Classic rule... */
-	if (tcp_dupack_heuristics(tp) > tp->reordering)
+	if (tcp_dupack_heuristics(tp) > tp->tcp_reordering)
 		return true;
 
 	return false;
@@ -2210,7 +2210,7 @@ static void tcp_update_scoreboard(struct sock *sk, int fast_rexmit)
 	if (tcp_is_reno(tp)) {
 		tcp_mark_head_lost(sk, 1, 1);
 	} else {
-		int sacked_upto = tp->sacked_out - tp->reordering;
+		int sacked_upto = tp->sacked_out - tp->tcp_reordering;
 		if (sacked_upto >= 0)
 			tcp_mark_head_lost(sk, sacked_upto, 0);
 		else if (fast_rexmit)
@@ -2760,7 +2760,7 @@ static bool tcp_force_fast_retransmit(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	return after(tcp_highest_sack_seq(tp),
-		     tp->snd_una + tp->reordering * tp->mss_cache);
+		     tp->snd_una + tp->tcp_reordering * tp->mss_cache);
 }
 
 /* Process an event, which can update packets-in-flight not trivially.
@@ -3266,7 +3266,7 @@ static inline bool tcp_may_raise_cwnd(const struct sock *sk, const int flag)
 	 * new SACK or ECE mark may first advance cwnd here and later reduce
 	 * cwnd in tcp_fastretrans_alert() based on more states.
 	 */
-	if (tcp_sk(sk)->reordering > sock_net(sk)->ipv4.sysctl_tcp_reordering)
+	if (tcp_sk(sk)->tcp_reordering > sock_net(sk)->ipv4.sysctl_tcp_reordering)
 		return flag & FLAG_FORWARD_PROGRESS;
 
 	return flag & FLAG_DATA_ACKED;

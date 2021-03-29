@@ -438,7 +438,7 @@ void tcp_init_sock(struct sock *sk)
 	tp->snd_cwnd_clamp = ~0;
 	tp->mss_cache = TCP_MSS_DEFAULT;
 
-	tp->reordering = sock_net(sk)->ipv4.sysctl_tcp_reordering;
+	tp->tcp_reordering = sock_net(sk)->ipv4.sysctl_tcp_reordering;
 	tcp_assign_congestion_control(sk);
 
 	tp->tsoffset = 0;
@@ -2940,7 +2940,7 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 	rate64 = rate != ~0U ? rate : ~0ULL;
 	info->tcpi_max_pacing_rate = rate64;
 
-	info->tcpi_reordering = tp->reordering;
+	info->tcpi_reordering = tp->tcp_reordering;
 	info->tcpi_snd_cwnd = tp->snd_cwnd;
 
 	if (info->tcpi_state == TCP_LISTEN) {
@@ -3059,7 +3059,7 @@ struct sk_buff *tcp_get_timestamping_opt_stats(const struct sock *sk)
 	nla_put_u64_64bit(stats, TCP_NLA_DELIVERY_RATE, rate64, TCP_NLA_PAD);
 
 	nla_put_u32(stats, TCP_NLA_SND_CWND, tp->snd_cwnd);
-	nla_put_u32(stats, TCP_NLA_REORDERING, tp->reordering);
+	nla_put_u32(stats, TCP_NLA_REORDERING, tp->tcp_reordering);
 	nla_put_u32(stats, TCP_NLA_MIN_RTT, tcp_min_rtt(tp));
 
 	nla_put_u8(stats, TCP_NLA_RECUR_RETRANS, inet_csk(sk)->icsk_retransmits);

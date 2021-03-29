@@ -424,10 +424,10 @@ void tcp_update_metrics(struct sock *sk)
 		}
 		if (!tcp_metric_locked(tm, TCP_METRIC_REORDERING)) {
 			val = tcp_metric_get(tm, TCP_METRIC_REORDERING);
-			if (val < tp->reordering &&
-			    tp->reordering != net->ipv4.sysctl_tcp_reordering)
+			if (val < tp->tcp_reordering &&
+			    tp->tcp_reordering != net->ipv4.sysctl_tcp_reordering)
 				tcp_metric_set(tm, TCP_METRIC_REORDERING,
-					       tp->reordering);
+					       tp->tcp_reordering);
 		}
 	}
 	tm->tcpm_stamp = jiffies;
@@ -470,8 +470,8 @@ void tcp_init_metrics(struct sock *sk)
 		tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 	}
 	val = tcp_metric_get(tm, TCP_METRIC_REORDERING);
-	if (val && tp->reordering != val)
-		tp->reordering = val;
+	if (val && tp->tcp_reordering != val)
+		tp->tcp_reordering = val;
 
 	crtt = tcp_metric_get(tm, TCP_METRIC_RTT);
 	rcu_read_unlock();
