@@ -46,6 +46,8 @@
 #include <trace/events/tcp.h>
 #include <qp/qp.h>
 
+extern bool interesting_sk(struct sock *sk);
+
 static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp);
 
@@ -1110,6 +1112,9 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	th->dest		= inet->inet_dport;
 	th->seq			= htonl(tcb->seq);
 	th->ack_seq		= htonl(tp->rcv_nxt);
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p send seq=%u ack=%u\n", sk, th->seq, th->ack);
+	}
 	*(((__be16 *)th) + 6)	= htons(((tcp_header_size >> 2) << 12) |
 					tcb->tcp_flags);
 
@@ -1516,17 +1521,6 @@ int tcp_mss_to_mtu(struct sock *sk, int mss)
 }
 EXPORT_SYMBOL(tcp_mss_to_mtu);
 
-static bool interesting_sk(struct sock *sk)
-{
-	int sport, dport;
-
-	if (sk->sk_family != AF_INET)
-		return false;
-	sport = ntohs(inet_sk(sk)->inet_sport);
-	dport = ntohs(inet_sk(sk)->inet_dport);
-	return (sport == 5001 || dport == 5001);
-}
-
 /* MTU probing init per socket */
 void tcp_mtup_init(struct sock *sk)
 {
@@ -1542,7 +1536,7 @@ void tcp_mtup_init(struct sock *sk)
 	if (icsk->icsk_mtup.enabled)
 		icsk->icsk_mtup.probe_timestamp = tcp_jiffies32;
 	if (interesting_sk(sk)) {
-		QP_PRINT_LOC("sk=%p mtup probe_timestamp=%d  search = %d to %d\n",
+		QP_PRINT_LOC("sk=%p PROBE INIT probe_timestamp=%d  search = %d to %d\n",
 				sk,
 				icsk->icsk_mtup.probe_timestamp,
 				icsk->icsk_mtup.search_low,
@@ -1578,6 +1572,7 @@ unsigned int tcp_sync_mss(struct sock *sk, u32 pmtu)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	int mss_now;
+	int old_mss_cache = tp->mss_cache;
 
 	if (icsk->icsk_mtup.search_high > pmtu)
 		icsk->icsk_mtup.search_high = pmtu;
@@ -1592,9 +1587,10 @@ unsigned int tcp_sync_mss(struct sock *sk, u32 pmtu)
 	tp->mss_cache = mss_now;
 
 	if (interesting_sk(sk)) {
-		QP_PRINT_LOC("sk=%p mss_cache=%d mtup probe_timestamp=%d search_low=%d to search_high=%d\n",
+		QP_PRINT_LOC("sk=%p mss_cache=%d old_mss_cache=%d mtup probe_timestamp=%d search_low=%d to search_high=%d\n",
 				sk,
 				tp->mss_cache,
+				old_mss_cache,
 				icsk->icsk_mtup.probe_timestamp,
 				icsk->icsk_mtup.search_low,
 				icsk->icsk_mtup.search_high);
@@ -2030,6 +2026,10 @@ send_now:
 	return false;
 }
 
+/*
+ * This is only called from tcp_mtu_probe
+ * It checks if the probe interval has passed and resets the whole thing
+ */
 static inline void tcp_mtu_check_reprobe(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
@@ -2054,17 +2054,30 @@ static inline void tcp_mtu_check_reprobe(struct sock *sk)
 		icsk->icsk_mtup.probe_timestamp = tcp_jiffies32;
 
 		if (interesting_sk(sk)) {
-			QP_PRINT_LOC("sk=%p REPROBE probe_timestamp=%d  search = %d to %d\n",
+			QP_PRINT_LOC("sk=%p update"
+					" probe_timestamp=%d"
+					" delta=%d"
+					" interval=%d"
+					" search_low=%d"
+					" search_high=%d\n",
 					sk,
+					delta,
+					interval,
 					icsk->icsk_mtup.probe_timestamp,
 					icsk->icsk_mtup.search_low,
 					icsk->icsk_mtup.search_high);
 		}
 	} else {
 		if (interesting_sk(sk)) {
-			QP_PRINT_LOC("sk=%p NOREPROBE probe_timestamp=%d\n",
+			QP_PRINT_LOC("sk=%p no reprobe because too recent"
+					" probe_timestamp=%d"
+					" delta=%d"
+					" interval=%d"
+					"\n",
 					sk,
-					icsk->icsk_mtup.probe_timestamp);
+					icsk->icsk_mtup.probe_timestamp,
+					delta,
+					interval);
 		}
 	}
 }
@@ -2118,22 +2131,28 @@ static int tcp_mtu_probe(struct sock *sk)
 		   inet_csk(sk)->icsk_ca_state != TCP_CA_Open ||
 		   tp->snd_cwnd < 11 ||
 		   tp->rx_opt.num_sacks || tp->rx_opt.dsack)) {
-		if (interesting_sk(sk))
-			QP_PRINT_LOC("skip probe sk=%p"
-					" icsk_mtup.enabled=%d"
-					" icsk_ca_state=%d"
-					" icsk_mtup.probe_size=%d"
-					" snd_cwnd=%d"
-					" rx_opt.num_sacks=%d"
-					" rx_opt.dsack=%d"
-					"\n",
-					sk,
-					icsk->icsk_mtup.enabled,
-					icsk->icsk_mtup.probe_size,
-					inet_csk(sk)->icsk_ca_state,
-					tp->snd_cwnd,
-					tp->rx_opt.num_sacks,
-					tp->rx_opt.dsack);
+		if (interesting_sk(sk)) {
+			if (inet_csk(sk)->icsk_ca_state != TCP_CA_Open) {
+				QP_PRINT_RATELIMIT("sk=%p skip probe because icks_ca_state=%d\n",
+					sk, inet_csk(sk)->icsk_ca_state);
+			} else {
+				QP_PRINT_LOC("skip probe sk=%p"
+						" icsk_mtup.enabled=%d"
+						" icsk_mtup.probe_size=%d"
+						" icsk_ca_state=%d"
+						" snd_cwnd=%d"
+						" rx_opt.num_sacks=%d"
+						" rx_opt.dsack=%d"
+						"\n",
+						sk,
+						icsk->icsk_mtup.enabled,
+						icsk->icsk_mtup.probe_size,
+						inet_csk(sk)->icsk_ca_state,
+						tp->snd_cwnd,
+						tp->rx_opt.num_sacks,
+						tp->rx_opt.dsack);
+			}
+		}
 		return -1;
 	}
 
@@ -2292,6 +2311,14 @@ static int tcp_mtu_probe(struct sock *sk)
 	/* We're ready to send.  If this fails, the probe will
 	 * be resegmented into mss-sized pieces by tcp_write_xmit().
 	 */
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p PROBE SEND size=%d seq=%u end_seq=%u"
+				"\n",
+				sk,
+				tcp_mss_to_mtu(sk, nskb->len),
+				TCP_SKB_CB(nskb)->seq,
+				TCP_SKB_CB(nskb)->end_seq);
+	}
 	if (!tcp_transmit_skb(sk, nskb, 1, GFP_ATOMIC)) {
 		/* Decrement cwnd here because we are sending
 		 * effectively two packets. */
@@ -2302,8 +2329,16 @@ static int tcp_mtu_probe(struct sock *sk)
 		tp->mtu_probe.probe_seq_start = TCP_SKB_CB(nskb)->seq;
 		tp->mtu_probe.probe_seq_end = TCP_SKB_CB(nskb)->end_seq;
 
-		if (interesting_sk(sk))
-			QP_PRINT_LOC("sk=%p\n", sk);
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p SENT PROBE"
+					" probe_size=%d"
+					" probe_seq_start=%u"
+					" probe_seq_end=%u"
+					"\n", sk,
+					icsk->icsk_mtup.probe_size,
+					tp->mtu_probe.probe_seq_start,
+					tp->mtu_probe.probe_seq_end);
+		}
 		return 1;
 	}
 
@@ -2429,11 +2464,18 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 
 	sent_pkts = 0;
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p mss_now=%u nonagle=%d push_one=%d tp->snd_nxt=%u\n",
+				sk, mss_now, nonagle, push_one, tp->snd_nxt);
+	}
 	tcp_mstamp_refresh(tp);
 	if (!push_one) {
 		/* Do MTU probing. */
 		result = tcp_mtu_probe(sk);
 		if (!result) {
+			if (interesting_sk(sk)) {
+				QP_PRINT_RATELIMIT("sk=%p return false because of plptmu\n", sk);
+			}
 			return false;
 		} else if (result > 0) {
 			sent_pkts = 1;
@@ -2609,10 +2651,21 @@ void tcp_send_loss_probe(struct sock *sk)
 	int pcount;
 	int mss = tcp_current_mss(sk);
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p mss=%d\n", sk, mss);
+	}
 	skb = tcp_send_head(sk);
 	if (skb && tcp_snd_wnd_test(tp, skb, mss)) {
 		pcount = tp->packets_out;
 		tcp_write_xmit(sk, mss, TCP_NAGLE_OFF, 2, GFP_ATOMIC);
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p sent window test mss=%d tp->packets_out=%d pcount=%d snd_nxt=%u\n",
+					sk,
+					mss,
+					tp->packets_out,
+					pcount,
+					tp->snd_nxt);
+		}
 		if (tp->packets_out > pcount)
 			goto probe_sent;
 		goto rearm_timer;
@@ -2620,8 +2673,12 @@ void tcp_send_loss_probe(struct sock *sk)
 	skb = skb_rb_last(&sk->tcp_rtx_queue);
 
 	/* At most one outstanding TLP retransmission. */
-	if (tp->tlp_high_seq)
+	if (tp->tlp_high_seq) {
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p REARM because tlp_high_seq=%u\n", sk, tp->tlp_high_seq);
+		}
 		goto rearm_timer;
+	}
 
 	/* Retransmit last segment. */
 	if (WARN_ON(!skb))
@@ -2639,6 +2696,9 @@ void tcp_send_loss_probe(struct sock *sk)
 					  (pcount - 1) * mss, mss,
 					  GFP_ATOMIC)))
 			goto rearm_timer;
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p pcount=%d skb->len=%d\n", sk, pcount, skb->len);
+		}
 		skb = skb_rb_next(skb);
 	}
 
@@ -2650,8 +2710,14 @@ void tcp_send_loss_probe(struct sock *sk)
 
 	/* Record snd_nxt for loss detection. */
 	tp->tlp_high_seq = tp->snd_nxt;
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p tlp_high_seq=%u\n", sk, tp->tlp_high_seq);
+	}
 
 probe_sent:
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p did send loss probe mss=%d\n", sk, mss);
+	}
 	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPLOSSPROBES);
 	/* Reset s.t. tcp_rearm_rto will restart timer from now */
 	inet_csk(sk)->icsk_pending = 0;
@@ -2954,8 +3020,12 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 
 
 	/* Inconclusive MTU probe */
-	if (icsk->icsk_mtup.probe_size)
+	if (icsk->icsk_mtup.probe_size) {
+		if (interesting_sk(sk)) {
+			QP_PRINT_RATELIMIT("sk=%p probe inconclusive\n", sk);
+		}
 		icsk->icsk_mtup.probe_size = 0;
+	}
 
 	/* Do not sent more than we queued. 1/4 is reserved for possible
 	 * copying overhead: fragmentation, tunneling, mangling etc.

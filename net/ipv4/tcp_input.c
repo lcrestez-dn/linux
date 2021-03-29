@@ -63,6 +63,7 @@
  */
 
 #define pr_fmt(fmt) "TCP: " fmt
+#define DEBUG
 
 #include <linux/mm.h>
 #include <linux/slab.h>
@@ -129,6 +130,8 @@ static void tcp_gro_dev_warn(struct sock *sk, const struct sk_buff *skb,
 		rcu_read_unlock();
 	}
 }
+
+extern bool interesting_sk(struct sock *sk);
 
 /* Adapt the MSS value used to make delayed ack decision to the
  * real world.
@@ -860,6 +863,7 @@ static void tcp_dsack_seen(struct tcp_sock *tp)
 static void tcp_check_sack_reordering(struct sock *sk, const u32 low_seq,
 				      const int ts)
 {
+	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 	const u32 mss = tp->mss_cache;
 	u32 fack, metric;
@@ -873,13 +877,41 @@ static void tcp_check_sack_reordering(struct sock *sk, const u32 low_seq,
 #if FASTRETRANS_DEBUG > 1
 		pr_debug("Disorder%d %d %u f%u s%u rr%d\n",
 			 tp->rx_opt.sack_ok, inet_csk(sk)->icsk_ca_state,
-			 tp->reordering,
+			 tp->tcp_reordering,
 			 0,
 			 tp->sacked_out,
 			 tp->undo_marker ? tp->undo_retrans : 0);
 #endif
+		if (interesting_sk(sk)) {
+			pr_info("sk=%p Disorder%d %d %u f%u s%u rr%d\n",
+				sk,
+				tp->rx_opt.sack_ok, inet_csk(sk)->icsk_ca_state,
+				tp->tcp_reordering,
+				0,
+				tp->sacked_out,
+				tp->undo_marker ? tp->undo_retrans : 0);
+		}
 		tp->tcp_reordering = min_t(u32, (metric + mss - 1) / mss,
 				       sock_net(sk)->ipv4.sysctl_tcp_max_reordering);
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p new tcp_reordering=%d"
+					" icsk_mtup.probe_size=%d"
+					" tlp_high_seq=%u"
+					" mss=%u"
+					" fack=%u"
+					" low_seq=%u"
+					" ts=%d"
+					"\n",
+					sk,
+					tp->tcp_reordering,
+					icsk->icsk_mtup.probe_size,
+					tp->tlp_high_seq,
+					mss,
+					fack,
+					low_seq,
+					ts);
+			QP_DUMP_STACK();
+		}
 	}
 
 	tp->rack.reord = 1;
@@ -1850,6 +1882,8 @@ static void tcp_check_reno_reordering(struct sock *sk, const int addend)
 
 	tp->tcp_reordering = min_t(u32, tp->packets_out + addend,
 			       sock_net(sk)->ipv4.sysctl_tcp_max_reordering);
+	if (interesting_sk(sk))
+		QP_PRINT_LOC("new tcp_reordering=%d\n", tp->tcp_reordering);
 	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPRENOREORDER);
 }
 
@@ -1968,9 +2002,12 @@ void tcp_enter_loss(struct sock *sk)
 	 * suggests that the degree of reordering is over-estimated.
 	 */
 	if (icsk->icsk_ca_state <= TCP_CA_Disorder &&
-	    tp->sacked_out >= net->ipv4.sysctl_tcp_reordering)
+	    tp->sacked_out >= net->ipv4.sysctl_tcp_reordering) {
 		tp->tcp_reordering = min_t(unsigned int, tp->tcp_reordering,
 				       net->ipv4.sysctl_tcp_reordering);
+		if (interesting_sk(sk))
+			QP_PRINT_LOC("new tcp_reordering=%d\n", tp->tcp_reordering);
+	}
 	tcp_set_ca_state(sk, TCP_CA_Loss);
 	tp->high_seq = tp->snd_nxt;
 	tcp_ecn_queue_cwr(tp);
@@ -2422,6 +2459,9 @@ static void tcp_init_cwnd_reduction(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
+	if (interesting_sk(sk) && tp->tlp_high_seq) {
+		QP_PRINT_LOC("sk=%p clear tlp_high_seq=%u\n", sk, tp->tlp_high_seq);
+	}
 	tp->high_seq = tp->snd_nxt;
 	tp->tlp_high_seq = 0;
 	tp->snd_cwnd_cnt = 0;
@@ -2520,17 +2560,6 @@ static void tcp_try_to_open(struct sock *sk, int flag)
 	}
 }
 
-static bool interesting_sk(struct sock *sk)
-{
-	int sport, dport;
-
-	if (sk->sk_family != AF_INET)
-		return false;
-	sport = ntohs(inet_sk(sk)->inet_sport);
-	dport = ntohs(inet_sk(sk)->inet_dport);
-	return (sport == 5001 || dport == 5001);
-}
-
 static void tcp_mtup_probe_failed(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
@@ -2539,7 +2568,7 @@ static void tcp_mtup_probe_failed(struct sock *sk)
 	icsk->icsk_mtup.probe_size = 0;
 	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMTUPFAIL);
 	if (interesting_sk(sk)) {
-		QP_PRINT_LOC("sk=%p mtup search = %d to %d\n",
+		QP_PRINT_LOC("sk=%p PROBE FAIL mtup search = %d to %d\n",
 				sk,
 				icsk->icsk_mtup.search_low,
 				icsk->icsk_mtup.search_high);
@@ -2552,7 +2581,7 @@ static void tcp_mtup_probe_success(struct sock *sk)
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
 	if (interesting_sk(sk)) {
-		QP_PRINT_LOC("sk=%p old tp->snd_cwnd=%d mss_cache=%d probe_size=%d mss_to_mtu=%d\n",
+		QP_PRINT_LOC("sk=%p PROBE PASS tp->snd_cwnd=%d mss_cache=%d probe_size=%d mss_to_mtu=%d\n",
 					 sk,
 					 tp->snd_cwnd,
 					 tp->mss_cache,
@@ -2575,7 +2604,7 @@ static void tcp_mtup_probe_success(struct sock *sk)
 	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMTUPSUCCESS);
 
 	if (interesting_sk(sk)) {
-		QP_PRINT_LOC("sk=%p snd_cwnd=%d new mtup_search_low=%d mtup_search_high=%d\n",
+		QP_PRINT_LOC("sk=%p PROBE PASS snd_cwnd=%d new mtup_search_low=%d mtup_search_high=%d\n",
 				sk,
 				tp->snd_cwnd,
 				icsk->icsk_mtup.search_low,
@@ -3475,6 +3504,9 @@ static void tcp_process_tlp_ack(struct sock *sk, u32 ack, int flag)
 
 	if (flag & FLAG_DSACKING_ACK) {
 		/* This DSACK means original and TLP probe arrived; no loss */
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p clear tlp_high_seq=%u\n", sk, tp->tlp_high_seq);
+		}
 		tp->tlp_high_seq = 0;
 	} else if (after(ack, tp->tlp_high_seq)) {
 		/* ACK advances: there was a loss, so reduce cwnd. Reset
@@ -3489,6 +3521,9 @@ static void tcp_process_tlp_ack(struct sock *sk, u32 ack, int flag)
 	} else if (!(flag & (FLAG_SND_UNA_ADVANCED |
 			     FLAG_NOT_DUP | FLAG_DATA_SACKED))) {
 		/* Pure dupack: original and TLP probe arrived; no loss */
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p clear tlp_high_seq=%u\n", sk, tp->tlp_high_seq);
+		}
 		tp->tlp_high_seq = 0;
 	}
 }

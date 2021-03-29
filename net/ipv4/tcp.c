@@ -284,6 +284,7 @@
 #include <net/busy_poll.h>
 
 #include <trace/events/tcp.h>
+#include <qp/qp.h>
 
 struct percpu_counter tcp_orphan_count;
 EXPORT_SYMBOL_GPL(tcp_orphan_count);
@@ -401,6 +402,17 @@ static u64 tcp_compute_delivery_rate(const struct tcp_sock *tp)
 	return rate64;
 }
 
+bool interesting_sk(struct sock *sk)
+{
+	int sport, dport;
+
+	if (sk->sk_family != AF_INET)
+		return false;
+	sport = ntohs(inet_sk(sk)->inet_sport);
+	dport = ntohs(inet_sk(sk)->inet_dport);
+	return (sport == 5001 || dport == 5001);
+}
+
 /* Address-family independent initialization for a tcp_sock.
  *
  * NOTE: A lot of things set to zero explicitly by call to
@@ -465,6 +477,10 @@ void tcp_init_transfer(struct sock *sk, int bpf_op)
 	tcp_mtup_init(sk);
 	icsk->icsk_af_ops->rebuild_header(sk);
 	tcp_init_metrics(sk);
+	if (interesting_sk(sk)) {
+		struct tcp_sock *tp = tcp_sk(sk);
+		QP_PRINT_LOC("new tcp_reordering=%d\n", tp->tcp_reordering);
+	}
 	tcp_call_bpf(sk, bpf_op);
 	tcp_init_congestion_control(sk);
 	tcp_init_buffer_space(sk);

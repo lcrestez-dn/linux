@@ -135,6 +135,7 @@ static bool interesting_sk(struct sock *sk)
 
 static void tcp_mtu_probing(struct inet_connection_sock *icsk, struct sock *sk)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
 	const struct net *net = sock_net(sk);
 	int mss;
 
@@ -146,7 +147,10 @@ static void tcp_mtu_probing(struct inet_connection_sock *icsk, struct sock *sk)
 		icsk->icsk_mtup.enabled = 1;
 		icsk->icsk_mtup.probe_timestamp = tcp_jiffies32;
 		if (interesting_sk(sk))
-			QP_PRINT_LOC("sk=%p\n", sk);
+			QP_PRINT_LOC("sk=%p enable tcp_mtu_probing probe_timestamp=%d snd_nxt=%d\n",
+					sk,
+					icsk->icsk_mtup.probe_timestamp,
+					tp->snd_nxt);
 	} else {
 		mss = tcp_mtu_to_mss(sk, icsk->icsk_mtup.search_low) >> 1;
 		mss = min(net->ipv4.sysctl_tcp_base_mss, mss);
@@ -212,6 +216,9 @@ static int tcp_write_timeout(struct sock *sk)
 	bool expired, do_reset;
 	int retry_until;
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p\n", sk);
+	}
 	if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV)) {
 		if (icsk->icsk_retransmits) {
 			dst_negative_advice(sk);
@@ -264,6 +271,9 @@ static int tcp_write_timeout(struct sock *sk)
 		/* Has it gone just too far? */
 		tcp_write_err(sk);
 		return 1;
+	}
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p return 0\n", sk);
 	}
 	return 0;
 }
@@ -446,6 +456,9 @@ void tcp_retransmit_timer(struct sock *sk)
 
 	WARN_ON(tcp_rtx_queue_empty(sk));
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p KILL tlp_high_seq=%u\n", sk, tp->tlp_high_seq);
+	}
 	tp->tlp_high_seq = 0;
 
 	if (!tp->snd_wnd && !sock_flag(sk, SOCK_DEAD) &&
