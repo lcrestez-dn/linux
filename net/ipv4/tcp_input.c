@@ -923,6 +923,7 @@ static void tcp_check_sack_reordering(struct sock *sk, const u32 low_seq,
 					fack,
 					low_seq,
 					ts);
+			dump_stack();
 			QP_DUMP_STACK();
 		}
 	}
@@ -1850,8 +1851,12 @@ advance_sp:
 	for (j = 0; j < used_sacks; j++)
 		tp->recv_sack_cache[i++] = sp[j];
 
-	if (inet_csk(sk)->icsk_ca_state != TCP_CA_Loss || tp->undo_marker)
+	if (inet_csk(sk)->icsk_ca_state != TCP_CA_Loss || tp->undo_marker) {
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p tcp_check_sack_reordering prior_snd_una=%u\n", sk, state->reord);
+		}
 		tcp_check_sack_reordering(sk, state->reord, 0);
+	}
 
 	tcp_verify_left_out(tp);
 out:
@@ -2761,6 +2766,8 @@ static bool tcp_try_undo_partial(struct sock *sk, u32 prior_snd_una)
 		/* Plain luck! Hole if filled with delayed
 		 * packet, rather than with a retransmit. Check reordering.
 		 */
+		if (interesting_sk(sk))
+			QP_PRINT_LOC("sk=%p tcp_check_sack_reordering prior_snd_una=%u\n", sk, prior_snd_una);
 		tcp_check_sack_reordering(sk, prior_snd_una, 1);
 
 		/* We are getting evidence that the reordering degree is higher
@@ -3221,8 +3228,11 @@ static int tcp_clean_rtx_queue(struct sock *sk, u32 prior_fack,
 			int delta;
 
 			/* Non-retransmitted hole got filled? That's reordering */
-			if (before(reord, prior_fack))
+			if (before(reord, prior_fack)) {
+				if (interesting_sk(sk))
+					QP_PRINT_LOC("sk=%p tcp_check_sack_reordering reorder=%u prior_fack=%u\n", sk, reord, prior_fack);
 				tcp_check_sack_reordering(sk, reord, 0);
+			}
 
 			delta = prior_sacked - tp->sacked_out;
 			tp->lost_cnt_hint -= min(tp->lost_cnt_hint, delta);

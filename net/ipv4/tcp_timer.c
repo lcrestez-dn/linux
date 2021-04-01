@@ -446,6 +446,9 @@ void tcp_retransmit_timer(struct sock *sk)
 	struct net *net = sock_net(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p BEGIN\n", sk);
+	}
 	if (tp->fastopen_rsk) {
 		WARN_ON_ONCE(sk->sk_state != TCP_SYN_RECV &&
 			     sk->sk_state != TCP_FIN_WAIT1);
@@ -581,6 +584,9 @@ out_reset_timer:
 		__sk_dst_reset(sk);
 
 out:;
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p ENDED\n", sk);
+	}
 }
 
 /* Called with bottom-half processing disabled.

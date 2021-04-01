@@ -510,8 +510,12 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		for (this_sack = 0; this_sack < opts->num_sack_blocks;
 		     ++this_sack) {
+			struct sock *sk = (struct sock *)tp;
 			*ptr++ = htonl(sp[this_sack].start_seq);
 			*ptr++ = htonl(sp[this_sack].end_seq);
+			if (interesting_sk(sk)) {
+				QP_PRINT_LOC("sk=%p send sack start=%u end=%u\n", sk, sp[this_sack].start_seq, sp[this_sack].end_seq);
+			}
 		}
 
 		tp->rx_opt.dsack = 0;
@@ -1113,7 +1117,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	th->seq			= htonl(tcb->seq);
 	th->ack_seq		= htonl(tp->rcv_nxt);
 	if (interesting_sk(sk)) {
-		QP_PRINT_LOC("sk=%p send seq=%u ack=%u\n", sk, th->seq, th->ack);
+		QP_PRINT_LOC("sk=%p send seq=%u ack=%u\n", sk, ntohl(th->seq), ntohl(th->ack_seq));
 	}
 	*(((__be16 *)th) + 6)	= htons(((tcp_header_size >> 2) << 12) |
 					tcb->tcp_flags);
@@ -2133,7 +2137,7 @@ static int tcp_mtu_probe(struct sock *sk)
 		   tp->rx_opt.num_sacks || tp->rx_opt.dsack)) {
 		if (interesting_sk(sk)) {
 			if (inet_csk(sk)->icsk_ca_state != TCP_CA_Open) {
-				QP_PRINT_RATELIMIT("sk=%p skip probe because icks_ca_state=%d\n",
+				QP_PRINT_LOC("sk=%p skip probe because icks_ca_state=%d\n",
 					sk, inet_csk(sk)->icsk_ca_state);
 			} else {
 				QP_PRINT_LOC("skip probe sk=%p"
@@ -2575,9 +2579,18 @@ repair:
 			tcp_schedule_loss_probe(sk, false);
 		is_cwnd_limited |= (tcp_packets_in_flight(tp) >= tp->snd_cwnd);
 		tcp_cwnd_validate(sk, is_cwnd_limited);
+		if (interesting_sk(sk)) {
+			QP_PRINT_RATELIMIT("sk=%p return false\n", sk);
+		}
 		return false;
 	}
-	return !tp->packets_out && !tcp_write_queue_empty(sk);
+	{
+		bool result = !tp->packets_out && !tcp_write_queue_empty(sk);
+		if (interesting_sk(sk)) {
+			QP_PRINT_RATELIMIT("sk=%p return %d\n", sk, (int)result);
+		}
+		return result;
+	}
 }
 
 bool tcp_schedule_loss_probe(struct sock *sk, bool advancing_rto)
@@ -3021,6 +3034,9 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 	unsigned int cur_mss;
 	int diff, len, err;
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p\n", sk);
+	}
 
 	/* Inconclusive MTU probe */
 	if (icsk->icsk_mtup.probe_size) {
@@ -3119,13 +3135,21 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 	} else if (err != -EBUSY) {
 		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPRETRANSFAIL);
 	}
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p\n", sk);
+	}
 	return err;
 }
 
 int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	int err = __tcp_retransmit_skb(sk, skb, segs);
+	int err;
+	
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p\n", sk);
+	}
+	err = __tcp_retransmit_skb(sk, skb, segs);
 
 	if (err == 0) {
 #if FASTRETRANS_DEBUG > 0
