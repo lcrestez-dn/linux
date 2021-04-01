@@ -151,6 +151,10 @@ static void tcp_mtu_probing(struct inet_connection_sock *icsk, struct sock *sk)
 					sk,
 					icsk->icsk_mtup.probe_timestamp,
 					tp->snd_nxt);
+		if (1) {
+			QP_PRINT_LOC("hack reset sk=%p tcp_reordering to netns default\n", sk);
+			tp->tcp_reordering = sock_net(sk)->ipv4.sysctl_tcp_reordering;
+		}
 	} else {
 		mss = tcp_mtu_to_mss(sk, icsk->icsk_mtup.search_low) >> 1;
 		mss = min(net->ipv4.sysctl_tcp_base_mss, mss);
