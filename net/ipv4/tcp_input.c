@@ -868,6 +868,13 @@ static void tcp_check_sack_reordering(struct sock *sk, const u32 low_seq,
 	const u32 mss = tp->mss_cache;
 	u32 fack, metric;
 
+	if (icsk->icsk_mtup.probe_size) {
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p ignore sack_reordering during pmtu probing probe_size=%d\n",
+					sk, icsk->icsk_mtup.probe_size);
+		}
+		return;
+	}
 	fack = tcp_highest_sack_seq(tp);
 	if (!before(low_seq, fack))
 		return;
