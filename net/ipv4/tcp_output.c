@@ -2319,13 +2319,13 @@ static int tcp_mtu_probe(struct sock *sk)
 				TCP_SKB_CB(nskb)->seq,
 				TCP_SKB_CB(nskb)->end_seq);
 	}
+
+	icsk->icsk_mtup.probe_size = tcp_mss_to_mtu(sk, nskb->len);
 	if (!tcp_transmit_skb(sk, nskb, 1, GFP_ATOMIC)) {
 		/* Decrement cwnd here because we are sending
 		 * effectively two packets. */
 		tp->snd_cwnd--;
 		tcp_event_new_data_sent(sk, nskb);
-
-		icsk->icsk_mtup.probe_size = tcp_mss_to_mtu(sk, nskb->len);
 		tp->mtu_probe.probe_seq_start = TCP_SKB_CB(nskb)->seq;
 		tp->mtu_probe.probe_seq_end = TCP_SKB_CB(nskb)->end_seq;
 
@@ -2340,6 +2340,9 @@ static int tcp_mtu_probe(struct sock *sk)
 					tp->mtu_probe.probe_seq_end);
 		}
 		return 1;
+	} else {
+		/* probe was not really sent */
+		icsk->icsk_mtup.probe_size = 0;
 	}
 
 	if (interesting_sk(sk))
