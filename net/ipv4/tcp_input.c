@@ -875,6 +875,12 @@ static void tcp_check_sack_reordering(struct sock *sk, const u32 low_seq,
 		}
 		return;
 	}
+	if (tp->tlp_high_seq) {
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p ignore sack_reordering during loss probe tlp_high_seq=%u\n", sk, tp->tlp_high_seq);
+		}
+		return;
+	}
 	fack = tcp_highest_sack_seq(tp);
 	if (!before(low_seq, fack))
 		return;
