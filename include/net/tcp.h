@@ -18,7 +18,7 @@
 #ifndef _TCP_H
 #define _TCP_H
 
-#define FASTRETRANS_DEBUG 1
+#define FASTRETRANS_DEBUG 2
 
 #include <linux/list.h>
 #include <linux/tcp.h>
