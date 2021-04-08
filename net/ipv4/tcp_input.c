@@ -2036,6 +2036,15 @@ void tcp_enter_loss(struct sock *sk)
 	tp->frto = net->ipv4.sysctl_tcp_frto &&
 		   (new_recovery || icsk->icsk_retransmits) &&
 		   !inet_csk(sk)->icsk_mtup.probe_size;
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p tp->frto=%d from sysctl=%d new_recovery=%d icsk_retransmits=%d probe_size=%d\n",
+				sk,
+				tp->frto,
+				net->ipv4.sysctl_tcp_frto,
+				new_recovery,
+				icsk->icsk_retransmits,
+				inet_csk(sk)->icsk_mtup.probe_size);
+	}
 }
 
 /* If ACK arrived pointing to a remembered SACK, it means that our
@@ -2709,6 +2718,23 @@ static void tcp_process_loss(struct sock *sk, int flag, bool is_dupack,
 	struct tcp_sock *tp = tcp_sk(sk);
 	bool recovered = !before(tp->snd_una, tp->high_seq);
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p"
+				" flag=0x%x"
+				" tp->frto=%d"
+				" tp->snd_nxt=%d"
+				" tp->high_seq=%d"
+				" tcp_wnd_end=%d"
+				" from %ps"
+				"\n",
+				sk,
+				flag,
+				tp->frto,
+				tp->snd_nxt,
+				tp->high_seq,
+				tcp_wnd_end(tp),
+				__builtin_return_address(0));
+	}
 	if ((flag & FLAG_SND_UNA_ADVANCED) &&
 	    tcp_try_undo_loss(sk, false))
 		return;
@@ -2733,6 +2759,9 @@ static void tcp_process_loss(struct sock *sk, int flag, bool is_dupack,
 			if (!tcp_write_queue_empty(sk) &&
 			    after(tcp_wnd_end(tp), tp->snd_nxt)) {
 				*rexmit = REXMIT_NEW;
+				if (interesting_sk(sk)) {
+					QP_PRINT_LOC("sk=%p rexmit=%d REXMIT_NEW from %ps\n", sk, *rexmit, __builtin_return_address(0));
+				}
 				return;
 			}
 			tp->frto = 0;
@@ -3569,6 +3598,9 @@ void tcp_xmit_recovery(struct sock *sk, int rexmit)
 	if (rexmit == REXMIT_NONE)
 		return;
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p rexmit=%d from %ps\n", sk, rexmit, __builtin_return_address(0));
+	}
 	if (unlikely(rexmit == 2)) {
 		if (interesting_sk(sk)) {
 			QP_PRINT_LOC("sk=%p call __tcp_push_pending_frames from %ps\n", sk, __builtin_return_address(0));
@@ -3709,6 +3741,9 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 	lost = tp->lost - lost;			/* freshly marked lost */
 	tcp_rate_gen(sk, delivered, lost, is_sack_reneg, sack_state.rate);
 	tcp_cong_control(sk, ack, delivered, flag, sack_state.rate);
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p call tcp_xmit_recovery rexmit=%d from %ps\n", sk, rexmit, __builtin_return_address(0));
+	}
 	tcp_xmit_recovery(sk, rexmit);
 	return 1;
 
@@ -3740,6 +3775,9 @@ old_ack:
 						&sack_state);
 		tcp_fastretrans_alert(sk, prior_snd_una, is_dupack, &flag,
 				      &rexmit);
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p call tcp_xmit_recovery rexmit=%d from %ps\n", sk, rexmit, __builtin_return_address(0));
+		}
 		tcp_xmit_recovery(sk, rexmit);
 	}
 
