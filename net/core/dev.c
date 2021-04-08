@@ -146,6 +146,8 @@
 #include <linux/sctp.h>
 #include <net/udp_tunnel.h>
 #include <linux/net_namespace.h>
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
+#include <qp/qp.h>
 
 #include "net-sysfs.h"
 
@@ -6938,6 +6940,7 @@ int __dev_set_mtu(struct net_device *dev, int new_mtu)
 	if (ops->ndo_change_mtu)
 		return ops->ndo_change_mtu(dev, new_mtu);
 
+	QP_PRINT_LOC("dev=%s old_mtu=%d new_mtu=%d\n", dev->name, dev->mtu, new_mtu);
 	dev->mtu = new_mtu;
 	return 0;
 }

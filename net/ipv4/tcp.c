@@ -284,6 +284,7 @@
 #include <net/busy_poll.h>
 
 #include <trace/events/tcp.h>
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
 #include <qp/qp.h>
 
 struct percpu_counter tcp_orphan_count;

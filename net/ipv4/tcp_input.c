@@ -79,6 +79,7 @@
 #include <linux/errqueue.h>
 #include <trace/events/tcp.h>
 #include <linux/static_key.h>
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
 #include <qp/qp.h>
 
 int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
@@ -923,8 +924,6 @@ static void tcp_check_sack_reordering(struct sock *sk, const u32 low_seq,
 					fack,
 					low_seq,
 					ts);
-			dump_stack();
-			QP_DUMP_STACK();
 		}
 	}
 
@@ -3563,7 +3562,7 @@ static inline void tcp_in_ack_event(struct sock *sk, u32 flags)
  * loss recovery then now we do any new sends (for FRTO) or
  * retransmits (for CA_Loss or CA_recovery) that make sense.
  */
-static void tcp_xmit_recovery(struct sock *sk, int rexmit)
+void tcp_xmit_recovery(struct sock *sk, int rexmit)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -3571,6 +3570,9 @@ static void tcp_xmit_recovery(struct sock *sk, int rexmit)
 		return;
 
 	if (unlikely(rexmit == 2)) {
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p call __tcp_push_pending_frames from %ps\n", sk, __builtin_return_address(0));
+		}
 		__tcp_push_pending_frames(sk, tcp_current_mss(sk),
 					  TCP_NAGLE_OFF);
 		if (after(tp->snd_nxt, tp->high_seq))

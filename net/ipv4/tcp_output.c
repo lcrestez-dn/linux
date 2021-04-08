@@ -44,6 +44,7 @@
 #include <linux/static_key.h>
 
 #include <trace/events/tcp.h>
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
 #include <qp/qp.h>
 
 extern bool interesting_sk(struct sock *sk);
@@ -514,7 +515,9 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			*ptr++ = htonl(sp[this_sack].start_seq);
 			*ptr++ = htonl(sp[this_sack].end_seq);
 			if (interesting_sk(sk)) {
-				QP_PRINT_LOC("sk=%p send sack start=%u end=%u\n", sk, sp[this_sack].start_seq, sp[this_sack].end_seq);
+				u32 end = sp[this_sack].end_seq;
+				u32 start = sp[this_sack].start_seq;
+				QP_PRINT_LOC("sk=%p send sack start=%u end=%u size=%u\n", sk, start, end, end - start);
 			}
 		}
 
@@ -792,6 +795,9 @@ static void tcp_tsq_handler(struct sock *sk)
 			tcp_xmit_retransmit_queue(sk);
 		}
 
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p call tcp_write_xmit\n", sk);
+		}
 		tcp_write_xmit(sk, tcp_current_mss(sk), tp->nonagle,
 			       0, GFP_ATOMIC);
 	}
@@ -1038,7 +1044,7 @@ static void tcp_update_skb_after_send(struct tcp_sock *tp, struct sk_buff *skb)
  * We are working here with either a clone of the original
  * SKB, or a fresh unique copy made by the retransmit engine.
  */
-static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
+noinline int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			    gfp_t gfp_mask)
 {
 	const struct inet_connection_sock *icsk = inet_csk(sk);
@@ -1117,7 +1123,18 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	th->seq			= htonl(tcb->seq);
 	th->ack_seq		= htonl(tp->rcv_nxt);
 	if (interesting_sk(sk)) {
-		QP_PRINT_LOC("sk=%p send seq=%u ack=%u\n", sk, ntohl(th->seq), ntohl(th->ack_seq));
+		QP_PRINT_LOC("sk=%p send"
+				" seq=%u"
+				" end_seq=%u"
+				" ack=%u"
+				" skb->len=%d"
+				" caller=%ps\n",
+				sk,
+				ntohl(th->seq),
+				tcb->end_seq,
+				ntohl(th->ack_seq),
+				skb->len,
+				__builtin_return_address(0));
 	}
 	*(((__be16 *)th) + 6)	= htons(((tcp_header_size >> 2) << 12) |
 					tcb->tcp_flags);
@@ -2325,6 +2342,9 @@ static int tcp_mtu_probe(struct sock *sk)
 	}
 
 	icsk->icsk_mtup.probe_size = tcp_mss_to_mtu(sk, nskb->len);
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p call probe tcp_transmit_skb %p\n", sk, skb);
+	}
 	if (!tcp_transmit_skb(sk, nskb, 1, GFP_ATOMIC)) {
 		/* Decrement cwnd here because we are sending
 		 * effectively two packets. */
@@ -2458,7 +2478,7 @@ void tcp_chrono_stop(struct sock *sk, const enum tcp_chrono type)
  * Returns true, if no segments are in flight and we have queued segments,
  * but cannot send anything now because of SWS or another problem.
  */
-static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
+bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -2472,8 +2492,8 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	sent_pkts = 0;
 
 	if (interesting_sk(sk)) {
-		QP_PRINT_LOC("sk=%p mss_now=%u nonagle=%d push_one=%d tp->snd_nxt=%u\n",
-				sk, mss_now, nonagle, push_one, tp->snd_nxt);
+		QP_PRINT_LOC("sk=%p mss_now=%u nonagle=%d push_one=%d tp->snd_nxt=%u caller=%ps\n",
+				sk, mss_now, nonagle, push_one, tp->snd_nxt, __builtin_return_address(0));
 	}
 	tcp_mstamp_refresh(tp);
 	if (!push_one) {
@@ -2481,7 +2501,7 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		result = tcp_mtu_probe(sk);
 		if (!result) {
 			if (interesting_sk(sk)) {
-				QP_PRINT_RATELIMIT("sk=%p return false because of plptmu\n", sk);
+				QP_PRINT_LOC("sk=%p return false because of plptmu\n", sk);
 			}
 			return false;
 		} else if (result > 0) {
@@ -2549,6 +2569,9 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		if (tcp_small_queue_check(sk, skb, 0))
 			break;
 
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p call tcp_transmit_skb %p\n", sk, skb);
+		}
 		if (unlikely(tcp_transmit_skb(sk, skb, 1, gfp)))
 			break;
 
@@ -2580,14 +2603,14 @@ repair:
 		is_cwnd_limited |= (tcp_packets_in_flight(tp) >= tp->snd_cwnd);
 		tcp_cwnd_validate(sk, is_cwnd_limited);
 		if (interesting_sk(sk)) {
-			QP_PRINT_RATELIMIT("sk=%p return false\n", sk);
+			QP_PRINT_LOC("sk=%p return false\n", sk);
 		}
 		return false;
 	}
 	{
 		bool result = !tp->packets_out && !tcp_write_queue_empty(sk);
 		if (interesting_sk(sk)) {
-			QP_PRINT_RATELIMIT("sk=%p return %d\n", sk, (int)result);
+			QP_PRINT_LOC("sk=%p return %d\n", sk, (int)result);
 		}
 		return result;
 	}
@@ -2673,6 +2696,9 @@ void tcp_send_loss_probe(struct sock *sk)
 	skb = tcp_send_head(sk);
 	if (skb && tcp_snd_wnd_test(tp, skb, mss)) {
 		pcount = tp->packets_out;
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p call tcp_write_xmit\n", sk);
+		}
 		tcp_write_xmit(sk, mss, TCP_NAGLE_OFF, 2, GFP_ATOMIC);
 		if (interesting_sk(sk)) {
 			QP_PRINT_LOC("sk=%p sent window test mss=%d tp->packets_out=%d pcount=%d snd_nxt=%u\n",
@@ -2755,6 +2781,9 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 	if (unlikely(sk->sk_state == TCP_CLOSE))
 		return;
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p call tcp_write_xmit from %ps\n", sk, __builtin_return_address(0));
+	}
 	if (tcp_write_xmit(sk, cur_mss, nonagle, 0,
 			   sk_gfp_mask(sk, GFP_ATOMIC)))
 		tcp_check_probe_timer(sk);
@@ -2769,6 +2798,9 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 
 	BUG_ON(!skb || skb->len < mss_now);
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p call tcp_write_xmit\n", sk);
+	}
 	tcp_write_xmit(sk, mss_now, TCP_NAGLE_PUSH, 1, sk->sk_allocation);
 }
 
@@ -3035,13 +3067,13 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 	int diff, len, err;
 
 	if (interesting_sk(sk)) {
-		QP_PRINT_LOC("sk=%p\n", sk);
+		QP_PRINT_LOC("sk=%p skb=%p seq=%u len=%d end_seq=%u\n", sk, skb, TCP_SKB_CB(skb)->seq, skb->len, TCP_SKB_CB(skb)->end_seq);
 	}
 
 	/* Inconclusive MTU probe */
 	if (icsk->icsk_mtup.probe_size) {
 		if (interesting_sk(sk)) {
-			QP_PRINT_RATELIMIT("sk=%p probe inconclusive\n", sk);
+			QP_PRINT_LOC("sk=%p probe inconclusive\n", sk);
 		}
 		icsk->icsk_mtup.probe_size = 0;
 	}
@@ -3117,6 +3149,9 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 
 		tcp_skb_tsorted_save(skb) {
 			nskb = __pskb_copy(skb, MAX_TCP_HEADER, GFP_ATOMIC);
+			if (interesting_sk(sk)) {
+				QP_PRINT_LOC("sk=%p call tcp_transmit_skb %p\n", sk, nskb);
+			}
 			err = nskb ? tcp_transmit_skb(sk, nskb, 0, GFP_ATOMIC) :
 				     -ENOBUFS;
 		} tcp_skb_tsorted_restore(skb);
@@ -3126,6 +3161,9 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 			tcp_rate_skb_sent(sk, skb);
 		}
 	} else {
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p call tcp_transmit_skb %p\n", sk, skb);
+		}
 		err = tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC);
 	}
 
@@ -3147,7 +3185,7 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 	int err;
 	
 	if (interesting_sk(sk)) {
-		QP_PRINT_LOC("sk=%p\n", sk);
+		QP_PRINT_LOC("sk=%p from %ps\n", sk, __builtin_return_address(0));
 	}
 	err = __tcp_retransmit_skb(sk, skb, segs);
 
@@ -3188,6 +3226,9 @@ void tcp_xmit_retransmit_queue(struct sock *sk)
 	if (!tp->packets_out)
 		return;
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p from %ps\n", sk, __builtin_return_address(0));
+	}
 	rtx_head = tcp_rtx_queue_head(sk);
 	skb = tp->retransmit_skb_hint ?: rtx_head;
 	max_segs = tcp_tso_segs(sk, tcp_current_mss(sk));
@@ -3340,6 +3381,9 @@ void tcp_send_active_reset(struct sock *sk, gfp_t priority)
 	tcp_init_nondata_skb(skb, tcp_acceptable_seq(sk),
 			     TCPHDR_ACK | TCPHDR_RST);
 	tcp_mstamp_refresh(tcp_sk(sk));
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p call tcp_transmit_skb %p\n", sk, skb);
+	}
 	/* Send it off. */
 	if (tcp_transmit_skb(sk, skb, 0, priority))
 		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPABORTFAILED);
@@ -3385,6 +3429,9 @@ int tcp_send_synack(struct sock *sk)
 
 		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_ACK;
 		tcp_ecn_send_synack(sk, skb);
+	}
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p call tcp_transmit_skb %p\n", sk, skb);
 	}
 	return tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC);
 }
@@ -3660,6 +3707,9 @@ static int tcp_send_syn_data(struct sock *sk, struct sk_buff *syn)
 	if (syn_data->len)
 		tcp_chrono_start(sk, TCP_CHRONO_BUSY);
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p call tcp_transmit_skb %p\n", sk, syn_data);
+	}
 	err = tcp_transmit_skb(sk, syn_data, 1, sk->sk_allocation);
 
 	syn->skb_mstamp = syn_data->skb_mstamp;
@@ -3686,6 +3736,9 @@ fallback:
 	/* Send a regular SYN with Fast Open cookie request option */
 	if (fo->cookie.len > 0)
 		fo->cookie.len = 0;
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p call tcp_transmit_skb %p\n", sk, syn);
+	}
 	err = tcp_transmit_skb(sk, syn, 1, sk->sk_allocation);
 	if (err)
 		tp->syn_fastopen = 0;
@@ -3724,6 +3777,9 @@ int tcp_connect(struct sock *sk)
 	tcp_ecn_send_syn(sk, buff);
 	tcp_rbtree_insert(&sk->tcp_rtx_queue, buff);
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p call tcp_transmit_skb %p\n", sk, buff);
+	}
 	/* Send off SYN; include data in Fast Open. */
 	err = tp->fastopen_req ? tcp_send_syn_data(sk, buff) :
 	      tcp_transmit_skb(sk, buff, 1, sk->sk_allocation);
@@ -3843,6 +3899,9 @@ void tcp_send_ack(struct sock *sk)
 	 */
 	skb_set_tcp_pure_ack(buff);
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p call tcp_transmit_skb %p\n", sk, buff);
+	}
 	/* Send it off, this clears delayed acks for us. */
 	tcp_transmit_skb(sk, buff, 0, (__force gfp_t)0);
 }
@@ -3878,6 +3937,9 @@ static int tcp_xmit_probe_skb(struct sock *sk, int urgent, int mib)
 	 */
 	tcp_init_nondata_skb(skb, tp->snd_una - !urgent, TCPHDR_ACK);
 	NET_INC_STATS(sock_net(sk), mib);
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p call tcp_transmit_skb %p\n", sk, skb);
+	}
 	return tcp_transmit_skb(sk, skb, 0, (__force gfp_t)0);
 }
 
@@ -3924,6 +3986,9 @@ int tcp_write_wakeup(struct sock *sk, int mib)
 			tcp_set_skb_tso_segs(skb, mss);
 
 		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p call tcp_transmit_skb %p\n", sk, skb);
+		}
 		err = tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC);
 		if (!err)
 			tcp_event_new_data_sent(sk, skb);

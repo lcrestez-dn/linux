@@ -113,6 +113,7 @@
 #include <net/secure_seq.h>
 #include <net/ip_tunnels.h>
 #include <net/l3mdev.h>
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
 #include <qp/qp.h>
 
 #include "fib_lookup.h"

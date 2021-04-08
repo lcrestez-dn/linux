@@ -21,6 +21,7 @@
 #include <linux/module.h>
 #include <linux/gfp.h>
 #include <net/tcp.h>
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
 #include <qp/qp.h>
 
 /**
@@ -151,9 +152,32 @@ static void tcp_mtu_probing(struct inet_connection_sock *icsk, struct sock *sk)
 					sk,
 					icsk->icsk_mtup.probe_timestamp,
 					tp->snd_nxt);
-		if (1) {
+		if (0) {
 			QP_PRINT_LOC("hack reset sk=%p tcp_reordering to netns default\n", sk);
 			tp->tcp_reordering = sock_net(sk)->ipv4.sysctl_tcp_reordering;
+		}
+Y		if (1) {
+			struct sk_buff *skb, *tmp;
+			struct tcp_skb_cb *tcb;
+
+			skb_rbtree_walk(skb, &sk->tcp_rtx_queue) {
+				tcb = TCP_SKB_CB(skb);
+				QP_PRINT_LOC("dump rtx_queue"
+						" skb=%p seq=%u end_seq=%u len=%u sacked=%x\n", skb, tcb->seq, tcb->end_seq, skb->len, (int)tcb->sacked);
+			}
+			skb_queue_walk(&sk->sk_write_queue, skb) {
+				tcb = TCP_SKB_CB(skb);
+				QP_PRINT_LOC("dump write_queue skb=%p"
+						" seq=%u end_seq=%u len=%u sacked=%x\n", skb, tcb->seq, tcb->end_seq, skb->len, (int)tcb->sacked);
+			}
+			/*
+			skb_queue_walk_safe(&sk->sk_write_queue, skb, tmp) {
+				tcb = TCP_SKB_CB(skb);
+				__skb_unlink(skb, &sk->sk_write_queue);
+				tcb->sacked |= TCPCB_LOST;
+				tcp_rbtree_insert(&sk->tcp_rtx_queue, skb);
+			}
+			 */
 		}
 	} else {
 		mss = tcp_mtu_to_mss(sk, icsk->icsk_mtup.search_low) >> 1;
@@ -447,7 +471,7 @@ void tcp_retransmit_timer(struct sock *sk)
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
 	if (interesting_sk(sk)) {
-		QP_PRINT_LOC("sk=%p BEGIN\n", sk);
+		QP_PRINT_LOC("sk=%p BEGIN from %ps\n", sk, __builtin_return_address(0));
 	}
 	if (tp->fastopen_rsk) {
 		WARN_ON_ONCE(sk->sk_state != TCP_SYN_RECV &&
@@ -497,6 +521,9 @@ void tcp_retransmit_timer(struct sock *sk)
 			goto out;
 		}
 		tcp_enter_loss(sk);
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p send from rtx_queue on shrinkage\n", sk);
+		}
 		tcp_retransmit_skb(sk, tcp_rtx_queue_head(sk), 1);
 		__sk_dst_reset(sk);
 		goto out_reset_timer;
@@ -529,6 +556,9 @@ void tcp_retransmit_timer(struct sock *sk)
 
 	tcp_enter_loss(sk);
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p send from rtx_queue after loss\n", sk);
+	}
 	if (tcp_retransmit_skb(sk, tcp_rtx_queue_head(sk), 1) > 0) {
 		/* Retransmission failed because of local congestion,
 		 * do not backoff.

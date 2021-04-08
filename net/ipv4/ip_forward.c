@@ -39,6 +39,8 @@
 #include <linux/route.h>
 #include <net/route.h>
 #include <net/xfrm.h>
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
+#include <qp/qp.h>
 
 static bool ip_exceeds_mtu(const struct sk_buff *skb, unsigned int mtu)
 {
@@ -124,6 +126,7 @@ int ip_forward(struct sk_buff *skb)
 		IP_INC_STATS(net, IPSTATS_MIB_FRAGFAILS);
 		icmp_send(skb, ICMP_DEST_UNREACH, ICMP_FRAG_NEEDED,
 			  htonl(mtu));
+		QP_PRINT_LOC("drop skb=%p because mtu=%d\n", skb, mtu);
 		goto drop;
 	}
 
