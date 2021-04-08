@@ -156,7 +156,7 @@ static void tcp_mtu_probing(struct inet_connection_sock *icsk, struct sock *sk)
 			QP_PRINT_LOC("hack reset sk=%p tcp_reordering to netns default\n", sk);
 			tp->tcp_reordering = sock_net(sk)->ipv4.sysctl_tcp_reordering;
 		}
-Y		if (1) {
+		if (1) {
 			struct sk_buff *skb, *tmp;
 			struct tcp_skb_cb *tcb;
 
