@@ -147,14 +147,26 @@ static void tcp_mtu_probing(struct inet_connection_sock *icsk, struct sock *sk)
 	if (!icsk->icsk_mtup.enabled) {
 		icsk->icsk_mtup.enabled = 1;
 		icsk->icsk_mtup.probe_timestamp = tcp_jiffies32;
-		if (interesting_sk(sk))
-			QP_PRINT_LOC("sk=%p enable tcp_mtu_probing probe_timestamp=%d snd_nxt=%d\n",
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p enable tcp_mtu_probing"
+					" probe_timestamp=%d"
+					" snd_nxt=%d"
+					" frto=%d"
+					"\n",
 					sk,
 					icsk->icsk_mtup.probe_timestamp,
-					tp->snd_nxt);
+					tp->snd_nxt,
+					tp->frto);
+		}
 		if (0) {
 			QP_PRINT_LOC("hack reset sk=%p tcp_reordering to netns default\n", sk);
 			tp->tcp_reordering = sock_net(sk)->ipv4.sysctl_tcp_reordering;
+		}
+		if (tp->frto) {
+			if (interesting_sk(sk)) {
+				QP_PRINT_LOC("sk=%p hack disable frto on mtu probing init!\n", sk);
+			}
+			tp->frto = 0;
 		}
 		if (1) {
 			struct sk_buff *skb, *tmp;
