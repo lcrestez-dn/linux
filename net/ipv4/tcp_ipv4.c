@@ -82,6 +82,7 @@
 #include <linux/scatterlist.h>
 
 #include <trace/events/tcp.h>
+#include <linux/tcp_stats.h>
 
 #ifdef CONFIG_TCP_MD5SIG
 static int tcp_v4_md5_hash_hdr(char *md5_hash, const struct tcp_md5sig_key *key,
@@ -1417,12 +1418,12 @@ static bool tcp_v4_inbound_md5_hash(const struct sock *sk,
 		return false;
 
 	if (hash_expected && !hash_location) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMD5NOTFOUND);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPMD5NOTFOUND);
 		return true;
 	}
 
 	if (!hash_expected && hash_location) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMD5UNEXPECTED);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPMD5UNEXPECTED);
 		return true;
 	}
 
@@ -1434,7 +1435,7 @@ static bool tcp_v4_inbound_md5_hash(const struct sock *sk,
 				      NULL, skb);
 
 	if (genhash || memcmp(hash_location, newhash, 16) != 0) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMD5FAILURE);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPMD5FAILURE);
 		net_info_ratelimited("MD5 Hash failed for (%pI4, %d)->(%pI4, %d)%s L3 index %d\n",
 				     &iph->saddr, ntohs(th->source),
 				     &iph->daddr, ntohs(th->dest),
@@ -1624,7 +1625,7 @@ struct sock *tcp_v4_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
 	return newsk;
 
 exit_overflow:
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_LISTENOVERFLOWS);
+	tcpext_inc_stats(sk, LINUX_MIB_LISTENOVERFLOWS);
 exit_nonewsk:
 	dst_release(dst);
 exit:
@@ -1873,7 +1874,7 @@ bool tcp_add_backlog(struct sock *sk, struct sk_buff *skb)
 		shinfo->gso_segs = min_t(u32, gso_segs + tail_gso_segs, 0xFFFF);
 
 		sk->sk_backlog.len += delta;
-		__NET_INC_STATS(sock_net(sk),
+		__tcpext_inc_stats(sk,
 				LINUX_MIB_TCPBACKLOGCOALESCE);
 		kfree_skb_partial(skb, fragstolen);
 		return false;
@@ -1889,7 +1890,7 @@ no_coalesce:
 
 	if (unlikely(sk_add_backlog(sk, skb, limit))) {
 		bh_unlock_sock(sk);
-		__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPBACKLOGDROP);
+		__tcpext_inc_stats(sk, LINUX_MIB_TCPBACKLOGDROP);
 		return true;
 	}
 	return false;

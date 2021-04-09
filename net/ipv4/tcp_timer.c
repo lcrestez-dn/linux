@@ -22,6 +22,7 @@
 #include <linux/module.h>
 #include <linux/gfp.h>
 #include <net/tcp.h>
+#include <linux/tcp_stats.h>
 
 static u32 tcp_clamp_rto_to_user_timeout(const struct sock *sk)
 {
@@ -72,7 +73,7 @@ static void tcp_write_err(struct sock *sk)
 
 	tcp_write_queue_purge(sk);
 	tcp_done(sk);
-	__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPABORTONTIMEOUT);
+	__tcpext_inc_stats(sk, LINUX_MIB_TCPABORTONTIMEOUT);
 }
 
 /**
@@ -123,7 +124,7 @@ static int tcp_out_of_resources(struct sock *sk, bool do_reset)
 		if (do_reset)
 			tcp_send_active_reset(sk, GFP_ATOMIC);
 		tcp_done(sk);
-		__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPABORTONMEMORY);
+		__tcpext_inc_stats(sk, LINUX_MIB_TCPABORTONMEMORY);
 		return 1;
 	}
 
@@ -279,7 +280,7 @@ static int tcp_write_timeout(struct sock *sk)
 
 	if (sk_rethink_txhash(sk)) {
 		tp->timeout_rehash++;
-		__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPTIMEOUTREHASH);
+		__tcpext_inc_stats(sk, LINUX_MIB_TCPTIMEOUTREHASH);
 	}
 
 	return 0;
@@ -315,7 +316,7 @@ void tcp_delack_timer_handler(struct sock *sk)
 		}
 		tcp_mstamp_refresh(tcp_sk(sk));
 		tcp_send_ack(sk);
-		__NET_INC_STATS(sock_net(sk), LINUX_MIB_DELAYEDACKS);
+		__tcpext_inc_stats(sk, LINUX_MIB_DELAYEDACKS);
 	}
 
 out:
@@ -343,7 +344,7 @@ static void tcp_delack_timer(struct timer_list *t)
 	if (!sock_owned_by_user(sk)) {
 		tcp_delack_timer_handler(sk);
 	} else {
-		__NET_INC_STATS(sock_net(sk), LINUX_MIB_DELAYEDACKLOCKED);
+		__tcpext_inc_stats(sk, LINUX_MIB_DELAYEDACKLOCKED);
 		/* deleguate our work to tcp_release_cb() */
 		if (!test_and_set_bit(TCP_DELACK_TIMER_DEFERRED, &sk->sk_tsq_flags))
 			sock_hold(sk);
@@ -508,7 +509,7 @@ void tcp_retransmit_timer(struct sock *sk)
 		goto out_reset_timer;
 	}
 
-	__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPTIMEOUTS);
+	__tcpext_inc_stats(sk, LINUX_MIB_TCPTIMEOUTS);
 	if (tcp_write_timeout(sk))
 		goto out;
 
@@ -530,7 +531,7 @@ void tcp_retransmit_timer(struct sock *sk)
 				mib_idx = LINUX_MIB_TCPRENOFAILURES;
 		}
 		if (mib_idx)
-			__NET_INC_STATS(sock_net(sk), mib_idx);
+			__tcpext_inc_stats(sk, mib_idx);
 	}
 
 	tcp_enter_loss(sk);

@@ -80,6 +80,7 @@
 #include <linux/jump_label_ratelimit.h>
 #include <net/busy_poll.h>
 #include <net/mptcp.h>
+#include <linux/tcp_stats.h>
 
 int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
 
@@ -1016,7 +1017,7 @@ static void tcp_check_sack_reordering(struct sock *sk, const u32 low_seq,
 
 	/* This exciting event is worth to be remembered. 8) */
 	tp->reord_seen++;
-	NET_INC_STATS(sock_net(sk),
+	tcpext_inc_stats(sk,
 		      ts ? LINUX_MIB_TCPTSREORDER : LINUX_MIB_TCPSACKREORDER);
 }
 
@@ -1056,7 +1057,7 @@ void tcp_mark_skb_lost(struct sock *sk, struct sk_buff *skb)
 			/* Account for retransmits that are lost again */
 			TCP_SKB_CB(skb)->sacked &= ~TCPCB_SACKED_RETRANS;
 			tp->retrans_out -= tcp_skb_pcount(skb);
-			NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPLOSTRETRANSMIT,
+			tcpext_add_stats(sk, LINUX_MIB_TCPLOSTRETRANSMIT,
 				      tcp_skb_pcount(skb));
 			tcp_notify_skb_loss_event(tp, skb);
 		}
@@ -1216,25 +1217,25 @@ static bool tcp_check_dsack(struct sock *sk, const struct sk_buff *ack_skb,
 	u32 dup_segs;
 
 	if (before(start_seq_0, TCP_SKB_CB(ack_skb)->ack_seq)) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPDSACKRECV);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPDSACKRECV);
 	} else if (num_sacks > 1) {
 		u32 end_seq_1 = get_unaligned_be32(&sp[1].end_seq);
 		u32 start_seq_1 = get_unaligned_be32(&sp[1].start_seq);
 
 		if (after(end_seq_0, end_seq_1) || before(start_seq_0, start_seq_1))
 			return false;
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPDSACKOFORECV);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPDSACKOFORECV);
 	} else {
 		return false;
 	}
 
 	dup_segs = tcp_dsack_seen(tp, start_seq_0, end_seq_0, state);
 	if (!dup_segs) {	/* Skip dubious DSACK */
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPDSACKIGNOREDDUBIOUS);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPDSACKIGNOREDDUBIOUS);
 		return false;
 	}
 
-	NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPDSACKRECVSEGS, dup_segs);
+	tcpext_add_stats(sk, LINUX_MIB_TCPDSACKRECVSEGS, dup_segs);
 
 	/* D-SACK for already forgotten data... Do dumb counting. */
 	if (tp->undo_marker && tp->undo_retrans > 0 &&
@@ -1437,7 +1438,7 @@ static bool tcp_shifted_skb(struct sock *sk, struct sk_buff *prev,
 
 	if (skb->len > 0) {
 		BUG_ON(!tcp_skb_pcount(skb));
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_SACKSHIFTED);
+		tcpext_inc_stats(sk, LINUX_MIB_SACKSHIFTED);
 		return false;
 	}
 
@@ -1464,7 +1465,7 @@ static bool tcp_shifted_skb(struct sock *sk, struct sk_buff *prev,
 
 	tcp_rtx_queue_unlink_and_free(skb, sk);
 
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_SACKMERGED);
+	tcpext_inc_stats(sk, LINUX_MIB_SACKMERGED);
 
 	return true;
 }
@@ -1633,7 +1634,7 @@ noop:
 	return skb;
 
 fallback:
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_SACKSHIFTFALLBACK);
+	tcpext_inc_stats(sk, LINUX_MIB_SACKSHIFTFALLBACK);
 	return NULL;
 }
 
@@ -1825,7 +1826,7 @@ tcp_sacktag_write_queue(struct sock *sk, const struct sk_buff *ack_skb,
 				mib_idx = LINUX_MIB_TCPSACKDISCARD;
 			}
 
-			NET_INC_STATS(sock_net(sk), mib_idx);
+			tcpext_inc_stats(sk, mib_idx);
 			if (i == 0)
 				first_sack_index = -1;
 			continue;
@@ -1990,7 +1991,7 @@ static void tcp_check_reno_reordering(struct sock *sk, const int addend)
 	tp->reordering = min_t(u32, tp->packets_out + addend,
 			       sock_net(sk)->ipv4.sysctl_tcp_max_reordering);
 	tp->reord_seen++;
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPRENOREORDER);
+	tcpext_inc_stats(sk, LINUX_MIB_TCPRENOREORDER);
 }
 
 /* Emulate SACKs for SACKless connection: account for a new dupack. */
@@ -2069,7 +2070,7 @@ static void tcp_timeout_mark_lost(struct sock *sk)
 	head = tcp_rtx_queue_head(sk);
 	is_reneg = head && (TCP_SKB_CB(head)->sacked & TCPCB_SACKED_ACKED);
 	if (is_reneg) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPSACKRENEGING);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPSACKRENEGING);
 		tp->sacked_out = 0;
 		/* Mark SACK reneging until we recover from this loss event. */
 		tp->is_sack_reneg = 1;
@@ -2485,7 +2486,7 @@ static bool tcp_try_undo_recovery(struct sock *sk)
 		else
 			mib_idx = LINUX_MIB_TCPFULLUNDO;
 
-		NET_INC_STATS(sock_net(sk), mib_idx);
+		tcpext_inc_stats(sk, mib_idx);
 	} else if (tp->rack.reo_wnd_persist) {
 		tp->rack.reo_wnd_persist--;
 	}
@@ -2512,7 +2513,7 @@ static bool tcp_try_undo_dsack(struct sock *sk)
 					       tp->rack.reo_wnd_persist + 1);
 		DBGUNDO(sk, "D-SACK");
 		tcp_undo_cwnd_reduction(sk, false);
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPDSACKUNDO);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPDSACKUNDO);
 		return true;
 	}
 	return false;
@@ -2527,9 +2528,9 @@ static bool tcp_try_undo_loss(struct sock *sk, bool frto_undo)
 		tcp_undo_cwnd_reduction(sk, true);
 
 		DBGUNDO(sk, "partial loss");
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPLOSSUNDO);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPLOSSUNDO);
 		if (frto_undo)
-			NET_INC_STATS(sock_net(sk),
+			tcpext_inc_stats(sk,
 					LINUX_MIB_TCPSPURIOUSRTOS);
 		inet_csk(sk)->icsk_retransmits = 0;
 		if (frto_undo || tcp_is_sack(tp)) {
@@ -2657,7 +2658,7 @@ static void tcp_mtup_probe_failed(struct sock *sk)
 
 	icsk->icsk_mtup.search_high = icsk->icsk_mtup.probe_size - 1;
 	icsk->icsk_mtup.probe_size = 0;
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMTUPFAIL);
+	tcpext_inc_stats(sk, LINUX_MIB_TCPMTUPFAIL);
 }
 
 static void tcp_mtup_probe_success(struct sock *sk)
@@ -2677,7 +2678,7 @@ static void tcp_mtup_probe_success(struct sock *sk)
 	icsk->icsk_mtup.search_low = icsk->icsk_mtup.probe_size;
 	icsk->icsk_mtup.probe_size = 0;
 	tcp_sync_mss(sk, icsk->icsk_pmtu_cookie);
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMTUPSUCCESS);
+	tcpext_inc_stats(sk, LINUX_MIB_TCPMTUPSUCCESS);
 }
 
 /* Do a simple retransmit without using the backoff mechanisms in
@@ -2747,7 +2748,7 @@ void tcp_enter_recovery(struct sock *sk, bool ece_ack)
 	else
 		mib_idx = LINUX_MIB_TCPSACKRECOVERY;
 
-	NET_INC_STATS(sock_net(sk), mib_idx);
+	tcpext_inc_stats(sk, mib_idx);
 
 	tp->prior_ssthresh = 0;
 	tcp_init_undo(tp);
@@ -2840,7 +2841,7 @@ static bool tcp_try_undo_partial(struct sock *sk, u32 prior_snd_una)
 
 		DBGUNDO(sk, "partial recovery");
 		tcp_undo_cwnd_reduction(sk, true);
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPPARTIALUNDO);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPPARTIALUNDO);
 		tcp_try_keep_open(sk);
 		return true;
 	}
@@ -3632,7 +3633,7 @@ static void tcp_process_tlp_ack(struct sock *sk, u32 ack, int flag)
 		tcp_set_ca_state(sk, TCP_CA_CWR);
 		tcp_end_cwnd_reduction(sk);
 		tcp_try_keep_open(sk);
-		NET_INC_STATS(sock_net(sk),
+		tcpext_inc_stats(sk,
 				LINUX_MIB_TCPLOSSPROBERECOVERY);
 	} else if (!(flag & (FLAG_SND_UNA_ADVANCED |
 			     FLAG_NOT_DUP | FLAG_DATA_SACKED))) {
@@ -3761,14 +3762,14 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 
 		tcp_in_ack_event(sk, CA_ACK_WIN_UPDATE);
 
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPHPACKS);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPHPACKS);
 	} else {
 		u32 ack_ev_flags = CA_ACK_SLOWPATH;
 
 		if (ack_seq != TCP_SKB_CB(skb)->end_seq)
 			flag |= FLAG_DATA;
 		else
-			NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPPUREACKS);
+			tcpext_inc_stats(sk, LINUX_MIB_TCPPUREACKS);
 
 		flag |= tcp_ack_update_window(sk, skb, ack, ack_seq);
 
@@ -4374,7 +4375,7 @@ static void tcp_dsack_set(struct sock *sk, u32 seq, u32 end_seq)
 		else
 			mib_idx = LINUX_MIB_TCPDSACKOFOSENT;
 
-		NET_INC_STATS(sock_net(sk), mib_idx);
+		tcpext_inc_stats(sk, mib_idx);
 
 		tp->rx_opt.dsack = 1;
 		tp->duplicate_sack[0].start_seq = seq;
@@ -4401,7 +4402,7 @@ static void tcp_rcv_spurious_retrans(struct sock *sk, const struct sk_buff *skb)
 	 */
 	if (TCP_SKB_CB(skb)->seq == tcp_sk(sk)->duplicate_sack[0].start_seq &&
 	    sk_rethink_txhash(sk))
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPDUPLICATEDATAREHASH);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPDUPLICATEDATAREHASH);
 }
 
 static void tcp_send_dupack(struct sock *sk, const struct sk_buff *skb)
@@ -4410,7 +4411,7 @@ static void tcp_send_dupack(struct sock *sk, const struct sk_buff *skb)
 
 	if (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq &&
 	    before(TCP_SKB_CB(skb)->seq, tp->rcv_nxt)) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_DELAYEDACKLOST);
+		tcpext_inc_stats(sk, LINUX_MIB_DELAYEDACKLOST);
 		tcp_enter_quickack_mode(sk, TCP_MAX_QUICKACKS);
 
 		if (tcp_is_sack(tp) && sock_net(sk)->ipv4.sysctl_tcp_dsack) {
@@ -4469,7 +4470,7 @@ static void tcp_sack_compress_send_ack(struct sock *sk)
 	 * substract one from tp->compressed_ack to keep
 	 * LINUX_MIB_TCPACKCOMPRESSED accurate.
 	 */
-	NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPACKCOMPRESSED,
+	tcpext_add_stats(sk, LINUX_MIB_TCPACKCOMPRESSED,
 		      tp->compressed_ack - 1);
 
 	tp->compressed_ack = 0;
@@ -4602,7 +4603,7 @@ static bool tcp_try_coalesce(struct sock *sk,
 
 	atomic_add(delta, &sk->sk_rmem_alloc);
 	sk_mem_charge(sk, delta);
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPRCVCOALESCE);
+	tcpext_inc_stats(sk, LINUX_MIB_TCPRCVCOALESCE);
 	TCP_SKB_CB(to)->end_seq = TCP_SKB_CB(from)->end_seq;
 	TCP_SKB_CB(to)->ack_seq = TCP_SKB_CB(from)->ack_seq;
 	TCP_SKB_CB(to)->tcp_flags |= TCP_SKB_CB(from)->tcp_flags;
@@ -4720,7 +4721,7 @@ static void tcp_data_queue_ofo(struct sock *sk, struct sk_buff *skb)
 	tcp_ecn_check_ce(sk, skb);
 
 	if (unlikely(tcp_try_rmem_schedule(sk, skb, skb->truesize))) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPOFODROP);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPOFODROP);
 		sk->sk_data_ready(sk);
 		tcp_drop(sk, skb);
 		return;
@@ -4731,7 +4732,7 @@ static void tcp_data_queue_ofo(struct sock *sk, struct sk_buff *skb)
 	inet_csk_schedule_ack(sk);
 
 	tp->rcv_ooopack += max_t(u16, 1, skb_shinfo(skb)->gso_segs);
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPOFOQUEUE);
+	tcpext_inc_stats(sk, LINUX_MIB_TCPOFOQUEUE);
 	seq = TCP_SKB_CB(skb)->seq;
 	end_seq = TCP_SKB_CB(skb)->end_seq;
 
@@ -4783,7 +4784,7 @@ coalesce_done:
 		if (before(seq, TCP_SKB_CB(skb1)->end_seq)) {
 			if (!after(end_seq, TCP_SKB_CB(skb1)->end_seq)) {
 				/* All the bits are present. Drop. */
-				NET_INC_STATS(sock_net(sk),
+				tcpext_inc_stats(sk,
 					      LINUX_MIB_TCPOFOMERGE);
 				tcp_drop(sk, skb);
 				skb = NULL;
@@ -4802,7 +4803,7 @@ coalesce_done:
 				tcp_dsack_extend(sk,
 						 TCP_SKB_CB(skb1)->seq,
 						 TCP_SKB_CB(skb1)->end_seq);
-				NET_INC_STATS(sock_net(sk),
+				tcpext_inc_stats(sk,
 					      LINUX_MIB_TCPOFOMERGE);
 				tcp_drop(sk, skb1);
 				goto merge_right;
@@ -4831,7 +4832,7 @@ merge_right:
 		rb_erase(&skb1->rbnode, &tp->out_of_order_queue);
 		tcp_dsack_extend(sk, TCP_SKB_CB(skb1)->seq,
 				 TCP_SKB_CB(skb1)->end_seq);
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPOFOMERGE);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPOFOMERGE);
 		tcp_drop(sk, skb1);
 	}
 	/* If there is no skb after us, we are the last_skb ! */
@@ -4897,7 +4898,7 @@ int tcp_send_rcvq(struct sock *sk, struct msghdr *msg, size_t size)
 	skb->len = size;
 
 	if (tcp_try_rmem_schedule(sk, skb, skb->truesize)) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPRCVQDROP);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPRCVQDROP);
 		goto err_free;
 	}
 
@@ -4952,7 +4953,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 	 */
 	if (TCP_SKB_CB(skb)->seq == tp->rcv_nxt) {
 		if (tcp_receive_window(tp) == 0) {
-			NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPZEROWINDOWDROP);
+			tcpext_inc_stats(sk, LINUX_MIB_TCPZEROWINDOWDROP);
 			goto out_of_window;
 		}
 
@@ -4961,7 +4962,7 @@ queue_and_out:
 		if (skb_queue_len(&sk->sk_receive_queue) == 0)
 			sk_forced_mem_schedule(sk, skb->truesize);
 		else if (tcp_try_rmem_schedule(sk, skb, skb->truesize)) {
-			NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPRCVQDROP);
+			tcpext_inc_stats(sk, LINUX_MIB_TCPRCVQDROP);
 			sk->sk_data_ready(sk);
 			goto drop;
 		}
@@ -4997,7 +4998,7 @@ queue_and_out:
 	if (!after(TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt)) {
 		tcp_rcv_spurious_retrans(sk, skb);
 		/* A retransmit, 2nd most common case.  Force an immediate ack. */
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_DELAYEDACKLOST);
+		tcpext_inc_stats(sk, LINUX_MIB_DELAYEDACKLOST);
 		tcp_dsack_set(sk, TCP_SKB_CB(skb)->seq, TCP_SKB_CB(skb)->end_seq);
 
 out_of_window:
@@ -5020,7 +5021,7 @@ drop:
 		 * remembering D-SACK for its head made in previous line.
 		 */
 		if (!tcp_receive_window(tp)) {
-			NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPZEROWINDOWDROP);
+			tcpext_inc_stats(sk, LINUX_MIB_TCPZEROWINDOWDROP);
 			goto out_of_window;
 		}
 		goto queue_and_out;
@@ -5049,7 +5050,7 @@ static struct sk_buff *tcp_collapse_one(struct sock *sk, struct sk_buff *skb,
 		rb_erase(&skb->rbnode, root);
 
 	__kfree_skb(skb);
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPRCVCOLLAPSED);
+	tcpext_inc_stats(sk, LINUX_MIB_TCPRCVCOLLAPSED);
 
 	return next;
 }
@@ -5254,7 +5255,7 @@ static bool tcp_prune_ofo_queue(struct sock *sk)
 	if (RB_EMPTY_ROOT(&tp->out_of_order_queue))
 		return false;
 
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_OFOPRUNED);
+	tcpext_inc_stats(sk, LINUX_MIB_OFOPRUNED);
 	goal = sk->sk_rcvbuf >> 3;
 	node = &tp->ooo_last_skb->rbnode;
 	do {
@@ -5294,7 +5295,7 @@ static int tcp_prune_queue(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_PRUNECALLED);
+	tcpext_inc_stats(sk, LINUX_MIB_PRUNECALLED);
 
 	if (atomic_read(&sk->sk_rmem_alloc) >= sk->sk_rcvbuf)
 		tcp_clamp_window(sk);
@@ -5327,7 +5328,7 @@ static int tcp_prune_queue(struct sock *sk)
 	 * drop receive data on the floor.  It will get retransmitted
 	 * and hopefully then we'll have sufficient space.
 	 */
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_RCVPRUNED);
+	tcpext_inc_stats(sk, LINUX_MIB_RCVPRUNED);
 
 	/* Massive buffer overcommit. */
 	tp->pred_flags = 0;
@@ -5591,7 +5592,7 @@ static bool tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 	    tp->rx_opt.saw_tstamp &&
 	    tcp_paws_discard(sk, skb)) {
 		if (!th->rst) {
-			NET_INC_STATS(sock_net(sk), LINUX_MIB_PAWSESTABREJECTED);
+			tcpext_inc_stats(sk, LINUX_MIB_PAWSESTABREJECTED);
 			if (!tcp_oow_rate_limited(sock_net(sk), skb,
 						  LINUX_MIB_TCPACKSKIPPEDPAWS,
 						  &tp->last_oow_ack_time))
@@ -5676,7 +5677,7 @@ static bool tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 syn_challenge:
 		if (syn_inerr)
 			TCP_INC_STATS(sock_net(sk), TCP_MIB_INERRS);
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPSYNCHALLENGE);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPSYNCHALLENGE);
 		tcp_send_challenge_ack(sk, skb);
 		goto discard;
 	}
@@ -5827,7 +5828,7 @@ void tcp_rcv_established(struct sock *sk, struct sk_buff *skb)
 
 			tcp_rcv_rtt_measure_ts(sk, skb);
 
-			NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPHPHITS);
+			tcpext_inc_stats(sk, LINUX_MIB_TCPHPHITS);
 
 			/* Bulk data transfer: receiver */
 			__skb_pull(skb, tcp_header_len);
@@ -5997,13 +5998,13 @@ static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
 		skb_rbtree_walk_from(data)
 			 tcp_mark_skb_lost(sk, data);
 		tcp_xmit_retransmit_queue(sk);
-		NET_INC_STATS(sock_net(sk),
+		tcpext_inc_stats(sk,
 				LINUX_MIB_TCPFASTOPENACTIVEFAIL);
 		return true;
 	}
 	tp->syn_data_acked = tp->syn_data;
 	if (tp->syn_data_acked) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPFASTOPENACTIVE);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPFASTOPENACTIVE);
 		/* SYN-data is counted as two separate packets in tcp_ack() */
 		if (tp->delivered > 1)
 			--tp->delivered;
@@ -6074,7 +6075,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (tp->rx_opt.saw_tstamp && tp->rx_opt.rcv_tsecr &&
 		    !between(tp->rx_opt.rcv_tsecr, tp->retrans_stamp,
 			     tcp_time_stamp(tp))) {
-			NET_INC_STATS(sock_net(sk),
+			tcpext_inc_stats(sk,
 					LINUX_MIB_PAWSACTIVEREJECTED);
 			goto reset_and_undo;
 		}
@@ -6459,7 +6460,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 
 		if (tp->linger2 < 0) {
 			tcp_done(sk);
-			NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
+			tcpext_inc_stats(sk, LINUX_MIB_TCPABORTONDATA);
 			return 1;
 		}
 		if (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq &&
@@ -6468,7 +6469,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 			if (tp->syn_fastopen && th->fin)
 				tcp_fastopen_active_disable(sk);
 			tcp_done(sk);
-			NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
+			tcpext_inc_stats(sk, LINUX_MIB_TCPABORTONDATA);
 			return 1;
 		}
 
@@ -6529,7 +6530,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 		if (sk->sk_shutdown & RCV_SHUTDOWN) {
 			if (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq &&
 			    after(TCP_SKB_CB(skb)->end_seq - th->fin, tp->rcv_nxt)) {
-				NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
+				tcpext_inc_stats(sk, LINUX_MIB_TCPABORTONDATA);
 				tcp_reset(sk, skb);
 				return 1;
 			}
@@ -6675,10 +6676,10 @@ static bool tcp_syn_flood_action(const struct sock *sk, const char *proto)
 	if (net->ipv4.sysctl_tcp_syncookies) {
 		msg = "Sending cookies";
 		want_cookie = true;
-		__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPREQQFULLDOCOOKIES);
+		__tcpext_inc_stats(sk, LINUX_MIB_TCPREQQFULLDOCOOKIES);
 	} else
 #endif
-		__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPREQQFULLDROP);
+		__tcpext_inc_stats(sk, LINUX_MIB_TCPREQQFULLDROP);
 
 	if (!queue->synflood_warned &&
 	    net->ipv4.sysctl_tcp_syncookies != 2 &&
@@ -6738,7 +6739,7 @@ u16 tcp_get_syncookie_mss(struct request_sock_ops *rsk_ops,
 		return 0;
 
 	if (sk_acceptq_is_full(sk)) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_LISTENOVERFLOWS);
+		tcpext_inc_stats(sk, LINUX_MIB_LISTENOVERFLOWS);
 		return 0;
 	}
 
@@ -6777,7 +6778,7 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 	}
 
 	if (sk_acceptq_is_full(sk)) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_LISTENOVERFLOWS);
+		tcpext_inc_stats(sk, LINUX_MIB_LISTENOVERFLOWS);
 		goto drop;
 	}
 

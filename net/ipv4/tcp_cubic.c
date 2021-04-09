@@ -28,6 +28,7 @@
 #include <linux/module.h>
 #include <linux/math64.h>
 #include <net/tcp.h>
+#include <linux/tcp_stats.h>
 
 #define BICTCP_BETA_SCALE    1024	/* Scale factor beta calculation
 					 * max_cwnd = snd_cwnd * beta
@@ -411,9 +412,9 @@ static void hystart_update(struct sock *sk, u32 delay)
 				pr_debug("hystart_ack_train (%u > %u) delay_min %u (+ ack_delay %u) cwnd %u\n",
 					 now - ca->round_start, threshold,
 					 ca->delay_min, hystart_ack_delay(sk), tp->snd_cwnd);
-				NET_INC_STATS(sock_net(sk),
+				tcpext_inc_stats(sk,
 					      LINUX_MIB_TCPHYSTARTTRAINDETECT);
-				NET_ADD_STATS(sock_net(sk),
+				tcpext_add_stats(sk,
 					      LINUX_MIB_TCPHYSTARTTRAINCWND,
 					      tp->snd_cwnd);
 				tp->snd_ssthresh = tp->snd_cwnd;
@@ -431,9 +432,9 @@ static void hystart_update(struct sock *sk, u32 delay)
 			if (ca->curr_rtt > ca->delay_min +
 			    HYSTART_DELAY_THRESH(ca->delay_min >> 3)) {
 				ca->found = 1;
-				NET_INC_STATS(sock_net(sk),
+				tcpext_inc_stats(sk,
 					      LINUX_MIB_TCPHYSTARTDELAYDETECT);
-				NET_ADD_STATS(sock_net(sk),
+				tcpext_add_stats(sk,
 					      LINUX_MIB_TCPHYSTARTDELAYCWND,
 					      tp->snd_cwnd);
 				tp->snd_ssthresh = tp->snd_cwnd;
