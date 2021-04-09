@@ -295,6 +295,39 @@ TRACE_EVENT(tcp_probe,
 		  __entry->srtt, __entry->rcv_wnd, __entry->sock_cookie)
 );
 
+/*
+ * Linux-specific tcp event, one of the columns in /proc/net/netstat
+ */
+TRACE_EVENT(tcpext_mib,
+
+	TP_PROTO(const struct sock *sk, int mib_entry, int mib_value_delta),
+
+	TP_ARGS(sk, mib_entry, mib_value_delta),
+
+	TP_STRUCT__entry(
+		__array(__u8, saddr, sizeof(struct sockaddr_in6))
+		__array(__u8, daddr, sizeof(struct sockaddr_in6))
+
+		__field(__u32, mib_entry)
+		__field(__u32, mib_value_delta)
+	),
+
+	TP_fast_assign(
+		memset(__entry->saddr, 0, sizeof(struct sockaddr_in6));
+		memset(__entry->daddr, 0, sizeof(struct sockaddr_in6));
+		TP_STORE_ADDR_PORTS(__entry, inet_sk(sk), sk);
+
+		__entry->mib_entry = mib_entry;
+		__entry->mib_value_delta = mib_value_delta;
+	),
+
+	TP_printk("Linux MIB %s(%d) delta=%d src=%pISpc dst=%pISpc",
+		  linux_mib_name(__entry->mib_entry),
+		  __entry->mib_entry,
+		  __entry->mib_value_delta,
+		  __entry->saddr, __entry->daddr)
+);
+
 #endif /* _TRACE_TCP_H */
 
 /* This part must be outside protection */
