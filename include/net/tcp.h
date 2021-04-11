@@ -1037,6 +1037,10 @@ static inline void tcp_set_ca_state(struct sock *sk, const u8 ca_state)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p old ca_state=%d to new ca_state=%d from %ps %ps %ps\n",
+				sk, icsk->icsk_ca_state, ca_state, __builtin_return_address(0), __builtin_return_address(1));
+	}
 	if (icsk->icsk_ca_ops->set_state)
 		icsk->icsk_ca_ops->set_state(sk, ca_state);
 	icsk->icsk_ca_state = ca_state;
