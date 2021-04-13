@@ -1770,6 +1770,7 @@ void tcp_mtup_init(struct sock *sk)
 	icsk->icsk_mtup.probe_size = 0;
 	if (icsk->icsk_mtup.enabled)
 		icsk->icsk_mtup.probe_timestamp = tcp_jiffies32;
+	timer_setup(&icsk->icsk_mtup.wait_data_timer, tcp_mtu_probe_wait_timer, 0);
 }
 EXPORT_SYMBOL(tcp_mtup_init);
 
@@ -2313,6 +2314,19 @@ static bool tcp_can_coalesce_send_queue_head(struct sock *sk, int len)
 	return true;
 }
 
+int tcp_mtu_probe_size_needed(struct sock *sk)
+{
+	struct inet_connection_sock *icsk = inet_csk(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
+	int probe_size;
+	int size_needed;
+
+	probe_size = tcp_mtu_to_mss(sk, (icsk->icsk_mtup.search_high + icsk->icsk_mtup.search_low) >> 1);
+	size_needed = probe_size + (tp->reordering + 1) * tp->mss_cache;
+
+	return size_needed;
+}
+
 /* Create a new MTU probe if we are ready.
  * MTU probe is regularly attempting to increase the path MTU by
  * deliberately sending larger packets.  This discovers routing
@@ -2368,12 +2382,14 @@ static int tcp_mtu_probe(struct sock *sk)
 		return -1;
 	}
 
-	/* Have enough data in the send queue to probe? */
-	if (tp->write_seq - tp->snd_nxt < size_needed)
-		return -1;
-
+	/* Can probe ever fit inside window? */
 	if (tp->snd_wnd < size_needed)
 		return -1;
+
+	/* Have enough data in the send queue to probe? */
+	if (tp->write_seq - tp->snd_nxt < size_needed)
+		return net->ipv4.sysctl_tcp_mtu_probe_autocork ? 0 : -1;
+
 	if (after(tp->snd_nxt + size_needed, tcp_wnd_end(tp)))
 		return 0;
 
@@ -2598,7 +2614,9 @@ void tcp_chrono_stop(struct sock *sk, const enum tcp_chrono type)
 static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp)
 {
+	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct net *net = sock_net(sk);
 	struct sk_buff *skb;
 	unsigned int tso_segs, sent_pkts;
 	int cwnd_quota;
@@ -2609,13 +2627,23 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	sent_pkts = 0;
 
 	tcp_mstamp_refresh(tp);
+	/*
+	 * Waiting for tcp probe data also applies when push_one=1
+	 * If user does many small writes we hold them until we have have enough
+	 * for a probe.
+	 */
 	if (!push_one) {
 		/* Do MTU probing. */
 		result = tcp_mtu_probe(sk);
 		if (!result) {
+			if (net->ipv4.sysctl_tcp_mtu_probe_autocork)
+				icsk->icsk_mtup.wait_data = true;
 			return false;
 		} else if (result > 0) {
+			icsk->icsk_mtup.wait_data = false;
 			sent_pkts = 1;
+		} else {
+			icsk->icsk_mtup.wait_data = false;
 		}
 	}
 
