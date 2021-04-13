@@ -130,7 +130,9 @@ struct inet_connection_sock {
 		int		  search_low;
 
 		/* Information on the current probe. */
-		int		  probe_size;
+		int		  probe_size:31,
+		/* Are we actively accumulating data for an mtu probe? */
+				  wait_data:1;
 
 		u32		  probe_timestamp;
 	} icsk_mtup;

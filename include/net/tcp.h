@@ -597,6 +597,7 @@ int tcp_mtu_to_mss(struct sock *sk, int pmtu);
 int tcp_mss_to_mtu(struct sock *sk, int mss);
 void tcp_mtup_init(struct sock *sk);
 void tcp_init_buffer_space(struct sock *sk);
+int tcp_mtu_probe_size_needed(struct sock *sk, int *probe_size);
 
 static inline void tcp_bound_rto(const struct sock *sk)
 {

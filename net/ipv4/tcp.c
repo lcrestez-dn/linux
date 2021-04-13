@@ -898,6 +898,7 @@ struct sk_buff *sk_stream_alloc_skb(struct sock *sk, int size, gfp_t gfp,
 static unsigned int tcp_xmit_size_goal(struct sock *sk, u32 mss_now,
 				       int large_allowed)
 {
+	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 	u32 new_size_goal, size_goal;
 
@@ -917,7 +918,15 @@ static unsigned int tcp_xmit_size_goal(struct sock *sk, u32 mss_now,
 		size_goal = tp->gso_segs * mss_now;
 	}
 
-	return max(size_goal, mss_now);
+	size_goal = max(size_goal, mss_now);
+
+	if (unlikely(icsk->icsk_mtup.wait_data)) {
+		int mtu_probe_size_needed = tcp_mtu_probe_size_needed(sk, NULL);
+		if (mtu_probe_size_needed > 0)
+			size_goal = max(size_goal, (u32)mtu_probe_size_needed);
+	}
+
+	return size_goal;
 }
 
 static int tcp_send_mss(struct sock *sk, int *size_goal, int flags)
