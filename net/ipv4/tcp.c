@@ -285,6 +285,10 @@
 
 #include <trace/events/tcp.h>
 
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
+#include <qp/qp.h>
+extern bool interesting_sk(struct sock *sk);
+
 struct percpu_counter tcp_orphan_count;
 EXPORT_SYMBOL_GPL(tcp_orphan_count);
 
@@ -656,6 +660,7 @@ static void skb_entail(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	struct inet_connection_sock *icsk = inet_csk(sk);
 
 	skb->csum    = 0;
 	tcb->seq     = tcb->end_seq = tp->write_seq;
@@ -668,6 +673,28 @@ static void skb_entail(struct sock *sk, struct sk_buff *skb)
 	if (tp->nonagle & TCP_NAGLE_PUSH)
 		tp->nonagle &= ~TCP_NAGLE_PUSH;
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p call tcp_slow_start_after_idle_check"
+				" sysctl_tcp_slow_start_after_idle=%d"
+				" packets_out=%d"
+				" cong_control=%p"
+				" lsnd_time=%u"
+				" delta_lsnd_time=%u"
+				" icsk_rto=%u"
+				" caller=%ps\n",
+				sk,
+				sock_net(sk)->ipv4.sysctl_tcp_slow_start_after_idle,
+				tp->packets_out,
+				icsk->icsk_ca_ops->cong_control,
+				tp->lsndtime,
+				tcp_jiffies32 - tp->lsndtime,
+				icsk->icsk_rto,
+				__builtin_return_address(0));
+	}
+	if (tcp_mtu_probe_should_wait(sk)) {
+		QP_PRINT_LOC("sk=%p wait for enough data for an mtu probe\n", sk);
+		return;
+	}
 	tcp_slow_start_after_idle_check(sk);
 }
 
