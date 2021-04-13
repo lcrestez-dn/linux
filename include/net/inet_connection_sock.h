@@ -123,7 +123,10 @@ struct inet_connection_sock {
 		__u16		  rcv_mss;	 /* MSS used for delayed ACK decisions	   */ 
 	} icsk_ack;
 	struct {
-		int		  enabled;
+		int		  enabled:1;
+
+		/* If actively accumulating data for an mtu probe. */
+		int		  wait_data:1;
 
 		/* Range of MTUs to search */
 		int		  search_high;

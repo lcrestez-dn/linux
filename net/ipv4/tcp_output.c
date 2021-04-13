@@ -2100,12 +2100,14 @@ static int tcp_mtu_probe(struct sock *sk)
 		return -1;
 	}
 
-	/* Have enough data in the send queue to probe? */
-	if (tp->write_seq - tp->snd_nxt < size_needed)
-		return -1;
-
+	/* Can probe ever fit inside window? */
 	if (tp->snd_wnd < size_needed)
 		return -1;
+
+	/* Have enough data in the send queue to probe? */
+	if (tp->write_seq - tp->snd_nxt < size_needed)
+		return 0;
+
 	if (after(tp->snd_nxt + size_needed, tcp_wnd_end(tp)))
 		return 0;
 
@@ -2309,7 +2311,9 @@ void tcp_chrono_stop(struct sock *sk, const enum tcp_chrono type)
 static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp)
 {
+	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct net *net = sock_net(sk);
 	struct sk_buff *skb;
 	unsigned int tso_segs, sent_pkts;
 	int cwnd_quota;
@@ -2320,13 +2324,23 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	sent_pkts = 0;
 
 	tcp_mstamp_refresh(tp);
-	if (!push_one) {
+	/*
+	 * Waiting for tcp probe data also applies when push_one=1
+	 * If user does many small writes we hold them until we have have enough
+	 * for a probe.
+	 */
+	if (!push_one || (push_one < 2 && net->ipv4.sysctl_tcp_probe_wait)) {
 		/* Do MTU probing. */
 		result = tcp_mtu_probe(sk);
 		if (!result) {
+			if (net->ipv4.sysctl_tcp_probe_wait)
+				icsk->icsk_mtup.wait_data = true;
 			return false;
 		} else if (result > 0) {
+			icsk->icsk_mtup.wait_data = false;
 			sent_pkts = 1;
+		} else {
+			icsk->icsk_mtup.wait_data = false;
 		}
 	}
 
