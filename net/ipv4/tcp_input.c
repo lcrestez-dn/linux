@@ -79,6 +79,10 @@
 #include <trace/events/tcp.h>
 #include <linux/static_key.h>
 
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
+#include <qp/qp.h>
+extern bool interesting_sk(struct sock *sk);
+
 int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
 
 #define FLAG_DATA		0x01 /* Incoming frame contained data.		*/
@@ -2318,6 +2322,9 @@ static void tcp_undo_cwnd_reduction(struct sock *sk, bool unmark_loss)
 		const struct inet_connection_sock *icsk = inet_csk(sk);
 
 		tp->snd_cwnd = icsk->icsk_ca_ops->undo_cwnd(sk);
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p snd_cwnd=%d\n", sk, tp->snd_cwnd);
+		}
 
 		if (tp->prior_ssthresh > tp->snd_ssthresh) {
 			tp->snd_ssthresh = tp->prior_ssthresh;
@@ -2456,6 +2463,9 @@ void tcp_cwnd_reduction(struct sock *sk, int newly_acked_sacked, int flag)
 	/* Force a fast retransmit upon entering fast recovery */
 	sndcnt = max(sndcnt, (tp->prr_out ? 0 : 1));
 	tp->snd_cwnd = tcp_packets_in_flight(tp) + sndcnt;
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p snd_cwnd=%d\n", sk, tp->snd_cwnd);
+	}
 }
 
 static inline void tcp_end_cwnd_reduction(struct sock *sk)
@@ -2469,6 +2479,9 @@ static inline void tcp_end_cwnd_reduction(struct sock *sk)
 	if (tp->snd_ssthresh < TCP_INFINITE_SSTHRESH &&
 	    (inet_csk(sk)->icsk_ca_state == TCP_CA_CWR || tp->undo_marker)) {
 		tp->snd_cwnd = tp->snd_ssthresh;
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p snd_cwnd=%d\n", sk, tp->snd_cwnd);
+		}
 		tp->snd_cwnd_stamp = tcp_jiffies32;
 	}
 	tcp_ca_event(sk, CA_EVENT_COMPLETE_CWR);
@@ -2538,6 +2551,9 @@ static void tcp_mtup_probe_success(struct sock *sk)
 	tp->snd_cwnd = tp->snd_cwnd *
 		       tcp_mss_to_mtu(sk, tp->mss_cache) /
 		       icsk->icsk_mtup.probe_size;
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p snd_cwnd=%d\n", sk, tp->snd_cwnd);
+	}
 	tp->snd_cwnd_cnt = 0;
 	tp->snd_cwnd_stamp = tcp_jiffies32;
 	tp->snd_ssthresh = tcp_current_ssthresh(sk);
@@ -3322,8 +3338,12 @@ static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32
 			tp->pred_flags = 0;
 			tcp_fast_path_check(sk);
 
-			if (!tcp_write_queue_empty(sk))
+			if (!tcp_write_queue_empty(sk)) {
+				if (interesting_sk(sk)) {
+					QP_PRINT_LOC("sk=%p call tcp_slow_start_after_idle_check caller=%ps\n", sk, __builtin_return_address(0));
+				}
 				tcp_slow_start_after_idle_check(sk);
+			}
 
 			if (nwin > tp->max_window) {
 				tp->max_window = nwin;
