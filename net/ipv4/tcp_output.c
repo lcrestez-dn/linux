@@ -2435,7 +2435,7 @@ static int tcp_mtu_probe(struct sock *sk)
 					tp->reordering,
 					tp->mss_cache,
 					tp->snd_cwnd);
-		return 0;
+		return net->ipv4.sysctl_tcp_probe_wait ? 0 : -1;
 	}
 
 	if (after(tp->snd_nxt + size_needed, tcp_wnd_end(tp)))
