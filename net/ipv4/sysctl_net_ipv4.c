@@ -845,6 +845,13 @@ static struct ctl_table ipv4_net_table[] = {
 		.extra2		= &u32_max_div_HZ,
 	},
 	{
+		.procname	= "tcp_mtu_probe_size_hack",
+		.data		= &init_net.ipv4.sysctl_tcp_mtu_probe_size_hack,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
 		.procname	= "igmp_link_local_mcast_reports",
 		.data		= &init_net.ipv4.sysctl_igmp_llm_reports,
 		.maxlen		= sizeof(u8),
