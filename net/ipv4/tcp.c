@@ -276,6 +276,7 @@
 #include <net/xfrm.h>
 #include <net/ip.h>
 #include <net/sock.h>
+#include <linux/tcp_stats.h>
 
 #include <linux/uaccess.h>
 #include <asm/ioctls.h>
@@ -345,7 +346,7 @@ void tcp_enter_memory_pressure(struct sock *sk)
 	if (!val)
 		val--;
 	if (!cmpxchg(&tcp_memory_pressure, 0, val))
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMEMORYPRESSURES);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPMEMORYPRESSURES);
 }
 EXPORT_SYMBOL_GPL(tcp_enter_memory_pressure);
 
@@ -357,7 +358,7 @@ void tcp_leave_memory_pressure(struct sock *sk)
 		return;
 	val = xchg(&tcp_memory_pressure, 0);
 	if (val)
-		NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPMEMORYPRESSURESCHRONO,
+		tcpext_add_stats(sk, LINUX_MIB_TCPMEMORYPRESSURESCHRONO,
 			      jiffies_to_msecs(jiffies - val));
 }
 EXPORT_SYMBOL_GPL(tcp_leave_memory_pressure);
@@ -727,7 +728,7 @@ void tcp_push(struct sock *sk, int flags, int mss_now,
 
 		/* avoid atomic op if TSQ_THROTTLED bit is already set */
 		if (!test_bit(TSQ_THROTTLED, &sk->sk_tsq_flags)) {
-			NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPAUTOCORKING);
+			tcpext_inc_stats(sk, LINUX_MIB_TCPAUTOCORKING);
 			set_bit(TSQ_THROTTLED, &sk->sk_tsq_flags);
 		}
 		/* It is possible TX completion already happened
@@ -2766,13 +2767,13 @@ void __tcp_close(struct sock *sk, long timeout)
 		sk->sk_prot->disconnect(sk, 0);
 	} else if (data_was_unread) {
 		/* Unread data was tossed, zap the connection. */
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPABORTONCLOSE);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPABORTONCLOSE);
 		tcp_set_state(sk, TCP_CLOSE);
 		tcp_send_active_reset(sk, sk->sk_allocation);
 	} else if (sock_flag(sk, SOCK_LINGER) && !sk->sk_lingertime) {
 		/* Check zero linger _after_ checking for unread data. */
 		sk->sk_prot->disconnect(sk, 0);
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPABORTONDATA);
 	} else if (tcp_close_state(sk)) {
 		/* We FIN if the application ate all the data before
 		 * zapping the connection.
@@ -2843,7 +2844,7 @@ adjudge_to_death:
 		if (tp->linger2 < 0) {
 			tcp_set_state(sk, TCP_CLOSE);
 			tcp_send_active_reset(sk, GFP_ATOMIC);
-			__NET_INC_STATS(sock_net(sk),
+			__tcpext_inc_stats(sk,
 					LINUX_MIB_TCPABORTONLINGER);
 		} else {
 			const int tmo = tcp_fin_time(sk);
@@ -2862,7 +2863,7 @@ adjudge_to_death:
 		if (tcp_check_oom(sk, 0)) {
 			tcp_set_state(sk, TCP_CLOSE);
 			tcp_send_active_reset(sk, GFP_ATOMIC);
-			__NET_INC_STATS(sock_net(sk),
+			__tcpext_inc_stats(sk,
 					LINUX_MIB_TCPABORTONMEMORY);
 		} else if (!check_net(sock_net(sk))) {
 			/* Not possible to send reset; just close */

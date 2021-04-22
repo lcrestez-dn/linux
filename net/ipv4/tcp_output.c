@@ -46,6 +46,7 @@
 #include <linux/static_key.h>
 
 #include <trace/events/tcp.h>
+#include <linux/tcp_stats.h>
 
 #define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
 #include <qp/qp.h>
@@ -101,7 +102,7 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 	if (!prior_packets || icsk->icsk_pending == ICSK_TIME_LOSS_PROBE)
 		tcp_rearm_rto(sk);
 
-	NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPORIGDATASENT,
+	tcpext_add_stats(sk, LINUX_MIB_TCPORIGDATASENT,
 		      tcp_skb_pcount(skb));
 }
 
@@ -209,7 +210,7 @@ static inline void tcp_event_ack_sent(struct sock *sk, unsigned int pkts,
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	if (unlikely(tp->compressed_ack)) {
-		NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPACKCOMPRESSED,
+		tcpext_add_stats(sk, LINUX_MIB_TCPACKCOMPRESSED,
 			      tp->compressed_ack);
 		tp->compressed_ack = 0;
 		if (hrtimer_try_to_cancel(&tp->compressed_ack_timer) == 1)
@@ -297,7 +298,7 @@ static u16 tcp_select_window(struct sock *sk)
 		 * Relax Will Robinson.
 		 */
 		if (new_win == 0)
-			NET_INC_STATS(sock_net(sk),
+			tcpext_inc_stats(sk,
 				      LINUX_MIB_TCPWANTZEROWINDOWADV);
 		new_win = ALIGN(cur_win, 1 << tp->rx_opt.rcv_wscale);
 	}
@@ -320,10 +321,10 @@ static u16 tcp_select_window(struct sock *sk)
 	if (new_win == 0) {
 		tp->pred_flags = 0;
 		if (old_win)
-			NET_INC_STATS(sock_net(sk),
+			tcpext_inc_stats(sk,
 				      LINUX_MIB_TCPTOZEROWINDOWADV);
 	} else if (old_win == 0) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPFROMZEROWINDOWADV);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPFROMZEROWINDOWADV);
 	}
 
 	return new_win;
@@ -1582,7 +1583,7 @@ int tcp_fragment(struct sock *sk, enum tcp_queue tcp_queue,
 		     tcp_queue != TCP_FRAG_IN_WRITE_QUEUE &&
 		     skb != tcp_rtx_queue_head(sk) &&
 		     skb != tcp_rtx_queue_tail(sk))) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPWQUEUETOOBIG);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPWQUEUETOOBIG);
 		return -ENOMEM;
 	}
 
@@ -2884,7 +2885,7 @@ static bool skb_still_in_host_queue(struct sock *sk,
 		set_bit(TSQ_THROTTLED, &sk->sk_tsq_flags);
 		smp_mb__after_atomic();
 		if (skb_fclone_busy(sk, skb)) {
-			NET_INC_STATS(sock_net(sk),
+			tcpext_inc_stats(sk,
 				      LINUX_MIB_TCPSPURIOUS_RTX_HOSTQUEUES);
 			return true;
 		}
@@ -2951,7 +2952,7 @@ probe_sent:
 	/* Record snd_nxt for loss detection. */
 	tp->tlp_high_seq = tp->snd_nxt;
 
-	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPLOSSPROBES);
+	tcpext_inc_stats(sk, LINUX_MIB_TCPLOSSPROBES);
 	/* Reset s.t. tcp_rearm_rto will restart timer from now */
 	inet_csk(sk)->icsk_pending = 0;
 rearm_timer:
@@ -3316,7 +3317,7 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 	segs = tcp_skb_pcount(skb);
 	TCP_ADD_STATS(sock_net(sk), TCP_MIB_RETRANSSEGS, segs);
 	if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_SYN)
-		__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPSYNRETRANS);
+		__tcpext_inc_stats(sk, LINUX_MIB_TCPSYNRETRANS);
 	tp->total_retrans += segs;
 	tp->bytes_retrans += skb->len;
 
@@ -3358,7 +3359,7 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 	if (likely(!err)) {
 		trace_tcp_retransmit_skb(sk, skb);
 	} else if (err != -EBUSY) {
-		NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPRETRANSFAIL, segs);
+		tcpext_add_stats(sk, LINUX_MIB_TCPRETRANSFAIL, segs);
 	}
 	return err;
 }
@@ -3451,7 +3452,7 @@ void tcp_xmit_retransmit_queue(struct sock *sk)
 		if (tcp_retransmit_skb(sk, skb, segs))
 			break;
 
-		NET_ADD_STATS(sock_net(sk), mib_idx, tcp_skb_pcount(skb));
+		tcpext_add_stats(sk, mib_idx, tcp_skb_pcount(skb));
 
 		if (tcp_in_cwnd_reduction(sk))
 			tp->prr_out += tcp_skb_pcount(skb);
@@ -3549,7 +3550,7 @@ void tcp_send_active_reset(struct sock *sk, gfp_t priority)
 	/* NOTE: No TCP options attached and we never retransmit this. */
 	skb = alloc_skb(MAX_TCP_HEADER, priority);
 	if (!skb) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPABORTFAILED);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPABORTFAILED);
 		return;
 	}
 
@@ -3560,7 +3561,7 @@ void tcp_send_active_reset(struct sock *sk, gfp_t priority)
 	tcp_mstamp_refresh(tcp_sk(sk));
 	/* Send it off. */
 	if (tcp_transmit_skb(sk, skb, 0, priority))
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPABORTFAILED);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPABORTFAILED);
 
 	/* skb of trace_tcp_send_reset() keeps the skb that caused RST,
 	 * skb here is different to the troublesome skb, so use NULL
@@ -3910,7 +3911,7 @@ static int tcp_send_syn_data(struct sock *sk, struct sk_buff *syn)
 	if (!err) {
 		tp->syn_data = (fo->copied > 0);
 		tcp_rbtree_insert(&sk->tcp_rtx_queue, syn_data);
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPORIGDATASENT);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPORIGDATASENT);
 		goto done;
 	}
 
@@ -4118,7 +4119,7 @@ static int tcp_xmit_probe_skb(struct sock *sk, int urgent, int mib)
 	 * send it.
 	 */
 	tcp_init_nondata_skb(skb, tp->snd_una - !urgent, TCPHDR_ACK);
-	NET_INC_STATS(sock_net(sk), mib);
+	tcpext_inc_stats(sk, mib);
 	return tcp_transmit_skb(sk, skb, 0, (__force gfp_t)0);
 }
 
@@ -4224,7 +4225,7 @@ int tcp_rtx_synack(const struct sock *sk, struct request_sock *req)
 				  NULL);
 	if (!res) {
 		__TCP_INC_STATS(sock_net(sk), TCP_MIB_RETRANSSEGS);
-		__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPSYNRETRANS);
+		__tcpext_inc_stats(sk, LINUX_MIB_TCPSYNRETRANS);
 		if (unlikely(tcp_passive_fastopen(sk)))
 			tcp_sk(sk)->total_retrans++;
 		trace_tcp_retransmit_synack(sk, req);

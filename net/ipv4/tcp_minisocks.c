@@ -29,6 +29,7 @@
 #include <net/inet_common.h>
 #include <net/xfrm.h>
 #include <net/busy_poll.h>
+#include <linux/tcp_stats.h>
 
 static bool tcp_in_window(u32 seq, u32 end_seq, u32 s_win, u32 e_win)
 {
@@ -333,7 +334,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 		 * socket up.  We've got bigger problems than
 		 * non-graceful socket closings.
 		 */
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPTIMEWAITOVERFLOW);
+		tcpext_inc_stats(sk, LINUX_MIB_TCPTIMEWAITOVERFLOW);
 	}
 
 	tcp_update_metrics(sk);
@@ -717,7 +718,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 					  &tcp_rsk(req)->last_oow_ack_time))
 			req->rsk_ops->send_ack(sk, skb, req);
 		if (paws_reject)
-			__NET_INC_STATS(sock_net(sk), LINUX_MIB_PAWSESTABREJECTED);
+			__tcpext_inc_stats(sk, LINUX_MIB_PAWSESTABREJECTED);
 		return NULL;
 	}
 
@@ -759,7 +760,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	if (req->num_timeout < inet_csk(sk)->icsk_accept_queue.rskq_defer_accept &&
 	    TCP_SKB_CB(skb)->end_seq == tcp_rsk(req)->rcv_isn + 1) {
 		inet_rsk(req)->acked = 1;
-		__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPDEFERACCEPTDROP);
+		__tcpext_inc_stats(sk, LINUX_MIB_TCPDEFERACCEPTDROP);
 		return NULL;
 	}
 
@@ -807,7 +808,7 @@ embryonic_reset:
 		bool unlinked = inet_csk_reqsk_queue_drop(sk, req);
 
 		if (unlinked)
-			__NET_INC_STATS(sock_net(sk), LINUX_MIB_EMBRYONICRSTS);
+			__tcpext_inc_stats(sk, LINUX_MIB_EMBRYONICRSTS);
 		*req_stolen = !unlinked;
 	}
 	return NULL;
