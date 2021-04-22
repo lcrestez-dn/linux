@@ -281,6 +281,10 @@
 #include <asm/ioctls.h>
 #include <net/busy_poll.h>
 
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
+#include <qp/qp.h>
+bool interesting_sk(struct sock *sk);
+
 /* Track pending CMSGs. */
 enum {
 	TCP_CMSG_INQ = 1,
@@ -436,6 +440,9 @@ void tcp_init_sock(struct sock *sk)
 	 * efficiently to them.  -DaveM
 	 */
 	tp->snd_cwnd = TCP_INIT_CWND;
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p set snd_cwnd=%d\n", sk, tp->snd_cwnd);
+	}
 
 	/* There's a bubble in the pipe until at least the first ACK. */
 	tp->app_limited = ~0U;
@@ -1212,6 +1219,10 @@ int tcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t size)
 	bool zc = false;
 	long timeo;
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p size=%zu\n", sk, size);
+	}
+
 	flags = msg->msg_flags;
 
 	if (flags & MSG_ZEROCOPY && size && sock_flag(sk, SOCK_ZEROCOPY)) {
@@ -1429,6 +1440,9 @@ out:
 	}
 out_nopush:
 	net_zcopy_put(uarg);
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("OUT sk=%p size=%zu return %d\n", sk, size, (int)(copied + copied_syn));
+	}
 	return copied + copied_syn;
 
 do_error:
@@ -1445,6 +1459,9 @@ out_err:
 	if (unlikely(tcp_rtx_and_write_queues_empty(sk) && err == -EAGAIN)) {
 		sk->sk_write_space(sk);
 		tcp_chrono_stop(sk, TCP_CHRONO_SNDBUF_LIMITED);
+	}
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("ERR sk=%p size=%zu err=%d\n", sk, size, err);
 	}
 	return err;
 }
@@ -2993,6 +3010,9 @@ int tcp_disconnect(struct sock *sk, int flags)
 	icsk->icsk_delack_max = TCP_DELACK_MAX;
 	tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 	tp->snd_cwnd = TCP_INIT_CWND;
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p set snd_cwnd=%d\n", sk, tp->snd_cwnd);
+	}
 	tp->snd_cwnd_cnt = 0;
 	tp->window_clamp = 0;
 	tp->delivered = 0;
