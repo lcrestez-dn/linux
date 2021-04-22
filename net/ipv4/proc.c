@@ -298,6 +298,22 @@ static const struct snmp_mib snmp4_net_list[] = {
 	SNMP_MIB_SENTINEL
 };
 
+const char* snmp_mib_name(const struct snmp_mib *list, int num)
+{
+	const struct snmp_mib *mib;
+
+	for (mib = list; mib->name; ++mib)
+		if (mib->entry == num)
+			return mib->name;
+
+	return NULL;
+}
+
+const char* linux_mib_name(int num)
+{
+	return snmp_mib_name(snmp4_net_list, num);
+}
+
 static void icmpmsg_put_line(struct seq_file *seq, unsigned long *vals,
 			     unsigned short *type, int count)
 {
