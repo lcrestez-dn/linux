@@ -81,6 +81,10 @@
 #include <net/busy_poll.h>
 #include <net/mptcp.h>
 
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
+#include <qp/qp.h>
+extern bool interesting_sk(struct sock *sk);
+
 int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
 
 #define FLAG_DATA		0x01 /* Incoming frame contained data.		*/
@@ -2113,6 +2117,9 @@ void tcp_enter_loss(struct sock *sk)
 	tp->snd_cwnd	   = tcp_packets_in_flight(tp) + 1;
 	tp->snd_cwnd_cnt   = 0;
 	tp->snd_cwnd_stamp = tcp_jiffies32;
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p set snd_cwnd=%d from caller=%ps\n", sk, tp->snd_cwnd, __builtin_return_address(0));
+	}
 
 	/* Timeout in disordered state after receiving substantial DUPACKs
 	 * suggests that the degree of reordering is over-estimated.
@@ -2451,6 +2458,9 @@ static void tcp_undo_cwnd_reduction(struct sock *sk, bool unmark_loss)
 		const struct inet_connection_sock *icsk = inet_csk(sk);
 
 		tp->snd_cwnd = icsk->icsk_ca_ops->undo_cwnd(sk);
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p set snd_cwnd=%d\n", sk, tp->snd_cwnd);
+		}
 
 		if (tp->prior_ssthresh > tp->snd_ssthresh) {
 			tp->snd_ssthresh = tp->prior_ssthresh;
@@ -2588,6 +2598,9 @@ void tcp_cwnd_reduction(struct sock *sk, int newly_acked_sacked, int newly_lost,
 	/* Force a fast retransmit upon entering fast recovery */
 	sndcnt = max(sndcnt, (tp->prr_out ? 0 : 1));
 	tp->snd_cwnd = tcp_packets_in_flight(tp) + sndcnt;
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p set snd_cwnd=%d\n", sk, tp->snd_cwnd);
+	}
 }
 
 static inline void tcp_end_cwnd_reduction(struct sock *sk)
@@ -2601,6 +2614,9 @@ static inline void tcp_end_cwnd_reduction(struct sock *sk)
 	if (tp->snd_ssthresh < TCP_INFINITE_SSTHRESH &&
 	    (inet_csk(sk)->icsk_ca_state == TCP_CA_CWR || tp->undo_marker)) {
 		tp->snd_cwnd = tp->snd_ssthresh;
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p snd_cwnd=%d\n", sk, tp->snd_cwnd);
+		}
 		tp->snd_cwnd_stamp = tcp_jiffies32;
 	}
 	tcp_ca_event(sk, CA_EVENT_COMPLETE_CWR);
@@ -2655,6 +2671,12 @@ static void tcp_mtup_probe_failed(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p probe_size=%d\n",
+				sk,
+				icsk->icsk_mtup.probe_size);
+		QP_DUMP_STACK();
+	}
 	icsk->icsk_mtup.search_high = icsk->icsk_mtup.probe_size - 1;
 	icsk->icsk_mtup.probe_size = 0;
 	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMTUPFAIL);
@@ -2665,6 +2687,19 @@ static void tcp_mtup_probe_success(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p probe_size=%d old"
+				" snd_cwnd=%d"
+				" snd_ssthresh=%d"
+				" prior_ssthresh=%d"
+				" ca_state=%d"
+				"\n",
+				sk, icsk->icsk_mtup.probe_size,
+				tp->snd_cwnd,
+				tp->snd_ssthresh,
+				tp->prior_ssthresh,
+				icsk->icsk_ca_state);
+	}
 	/* FIXME: breaks with very large cwnd */
 	tp->prior_ssthresh = tcp_current_ssthresh(sk);
 	tp->snd_cwnd = tp->snd_cwnd *
@@ -2673,11 +2708,23 @@ static void tcp_mtup_probe_success(struct sock *sk)
 	tp->snd_cwnd_cnt = 0;
 	tp->snd_cwnd_stamp = tcp_jiffies32;
 	tp->snd_ssthresh = tcp_current_ssthresh(sk);
-
 	icsk->icsk_mtup.search_low = icsk->icsk_mtup.probe_size;
 	icsk->icsk_mtup.probe_size = 0;
 	tcp_sync_mss(sk, icsk->icsk_pmtu_cookie);
 	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMTUPSUCCESS);
+
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p new"
+				" mss_cache=%d"
+				" snd_cwnd=%d"
+				" snd_ssthresh=%d"
+				" prior_ssthresh=%d\n",
+				sk,
+				tp->mss_cache,
+				tp->snd_cwnd,
+				tp->snd_ssthresh,
+				tp->prior_ssthresh);
+	}
 }
 
 /* Do a simple retransmit without using the backoff mechanisms in
@@ -2896,6 +2943,14 @@ static void tcp_fastretrans_alert(struct sock *sk, const u32 prior_snd_una,
 	bool do_lost = num_dupack || ((flag & FLAG_DATA_SACKED) &&
 				      tcp_force_fast_retransmit(sk));
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p prior_snd_una=%u num_dupack=%d flag=0x%x rexmit=0x%x\n",
+				sk,
+				prior_snd_una,
+				num_dupack,
+				*ack_flag,
+				*rexmit);
+	}
 	if (!tp->packets_out && tp->sacked_out)
 		tp->sacked_out = 0;
 
@@ -2986,6 +3041,9 @@ static void tcp_fastretrans_alert(struct sock *sk, const u32 prior_snd_una,
 			tcp_mtup_probe_failed(sk);
 			/* Restores the reduction we did in tcp_mtup_probe() */
 			tp->snd_cwnd++;
+			if (interesting_sk(sk)) {
+				QP_PRINT_LOC("sk=%p set snd_cwnd=%d\n", sk, tp->snd_cwnd);
+			}
 			tcp_simple_retransmit(sk);
 			return;
 		}
@@ -3504,8 +3562,12 @@ static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32
 			tp->pred_flags = 0;
 			tcp_fast_path_check(sk);
 
-			if (!tcp_write_queue_empty(sk))
+			if (!tcp_write_queue_empty(sk)) {
+				if (interesting_sk(sk)) {
+					QP_PRINT_LOC("sk=%p call tcp_slow_start_after_idle_check caller=%ps\n", sk, __builtin_return_address(0));
+				}
 				tcp_slow_start_after_idle_check(sk);
+			}
 
 			if (nwin > tp->max_window) {
 				tp->max_window = nwin;
@@ -5913,6 +5975,9 @@ void tcp_init_transfer(struct sock *sk, int bpf_op, struct sk_buff *skb)
 	else
 		tp->snd_cwnd = tcp_init_cwnd(tp, __sk_dst_get(sk));
 	tp->snd_cwnd_stamp = tcp_jiffies32;
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p set snd_cwnd=%d\n", sk, tp->snd_cwnd);
+	}
 
 	icsk->icsk_ca_initialized = 0;
 	bpf_skops_established(sk, bpf_op, skb);

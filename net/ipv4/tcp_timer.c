@@ -40,6 +40,10 @@ static u32 tcp_clamp_rto_to_user_timeout(const struct sock *sk)
 	return min_t(u32, icsk->icsk_rto, msecs_to_jiffies(remaining));
 }
 
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
+#include <qp/qp.h>
+extern bool interesting_sk(struct sock *sk);
+
 u32 tcp_clamp_probe0_to_user_timeout(const struct sock *sk, u32 when)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
@@ -417,8 +421,12 @@ static void tcp_fastopen_synack_timer(struct sock *sk, struct request_sock *req)
 		return;
 	}
 	/* Lower cwnd after certain SYNACK timeout like tcp_init_transfer() */
-	if (icsk->icsk_retransmits == 1)
+	if (icsk->icsk_retransmits == 1) {
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p call tcp_enter_loss caller=%ps\n", sk, __builtin_return_address(0));
+		}
 		tcp_enter_loss(sk);
+	}
 	/* XXX (TFO) - Unlike regular SYN-ACK retransmit, we ignore error
 	 * returned from rtx_syn_ack() to make it more persistent like
 	 * regular retransmit because if the child socket has been accepted
@@ -502,6 +510,9 @@ void tcp_retransmit_timer(struct sock *sk)
 			tcp_write_err(sk);
 			goto out;
 		}
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p call tcp_enter_loss caller=%ps\n", sk, __builtin_return_address(0));
+		}
 		tcp_enter_loss(sk);
 		tcp_retransmit_skb(sk, skb, 1);
 		__sk_dst_reset(sk);
@@ -533,6 +544,9 @@ void tcp_retransmit_timer(struct sock *sk)
 			__NET_INC_STATS(sock_net(sk), mib_idx);
 	}
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p call tcp_enter_loss caller=%ps\n", sk, __builtin_return_address(0));
+	}
 	tcp_enter_loss(sk);
 
 	icsk->icsk_retransmits++;

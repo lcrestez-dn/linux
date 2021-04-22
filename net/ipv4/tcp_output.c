@@ -47,6 +47,20 @@
 
 #include <trace/events/tcp.h>
 
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
+#include <qp/qp.h>
+
+bool interesting_sk(struct sock *sk)
+{
+	int sport, dport;
+
+	if (sk->sk_family != AF_INET)
+		return false;
+	sport = ntohs(inet_sk(sk)->inet_sport);
+	dport = ntohs(inet_sk(sk)->inet_dport);
+	return (sport == 5001 || dport == 5001);
+}
+
 /* Refresh clocks of a TCP socket,
  * ensuring monotically increasing values.
  */
@@ -68,6 +82,13 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int prior_packets = tp->packets_out;
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p advance delta=%u snd_nxt=%u to %u called=%ps\n",
+				sk,
+				TCP_SKB_CB(skb)->end_seq - tp->snd_nxt,
+				tp->snd_nxt, TCP_SKB_CB(skb)->end_seq,
+				__builtin_return_address(0));
+	}
 	WRITE_ONCE(tp->snd_nxt, TCP_SKB_CB(skb)->end_seq);
 
 	__skb_unlink(skb, &sk->sk_write_queue);
@@ -152,6 +173,9 @@ void tcp_cwnd_restart(struct sock *sk, s32 delta)
 	while ((delta -= inet_csk(sk)->icsk_rto) > 0 && cwnd > restart_cwnd)
 		cwnd >>= 1;
 	tp->snd_cwnd = max(cwnd, restart_cwnd);
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p snd_cwnd=%d from %ps\n", sk, tp->snd_cwnd, __builtin_return_address(0));
+	}
 	tp->snd_cwnd_stamp = tcp_jiffies32;
 	tp->snd_cwnd_used = 0;
 }
@@ -1867,6 +1891,9 @@ static void tcp_cwnd_application_limited(struct sock *sk)
 		if (win_used < tp->snd_cwnd) {
 			tp->snd_ssthresh = tcp_current_ssthresh(sk);
 			tp->snd_cwnd = (tp->snd_cwnd + win_used) >> 1;
+			if (interesting_sk(sk)) {
+				QP_PRINT_LOC("sk=%p snd_cwnd=%d\n", sk, tp->snd_cwnd);
+			}
 		}
 		tp->snd_cwnd_used = 0;
 	}
@@ -2344,7 +2371,21 @@ static int tcp_mtu_probe(struct sock *sk)
 		   inet_csk(sk)->icsk_ca_state != TCP_CA_Open ||
 		   tp->snd_cwnd < 11 ||
 		   tp->rx_opt.num_sacks || tp->rx_opt.dsack))
+	{
+		if (interesting_sk(sk)) {
+			if (!icsk->icsk_mtup.enabled)
+				QP_PRINT_LOC("sk=%p skip not enabled\n", sk);
+			else if (icsk->icsk_mtup.probe_size)
+				QP_PRINT_LOC("sk=%p skip already probing\n", sk);
+			else if (inet_csk(sk)->icsk_ca_state != TCP_CA_Open)
+				QP_PRINT_LOC("sk=%p skip ca_state=%d\n", sk, inet_csk(sk)->icsk_ca_state);
+			else if (tp->snd_cwnd < 11)
+				QP_PRINT_LOC("sk=%p skip snd_cwnd=%d\n", sk, tp->snd_cwnd);
+			else
+				QP_PRINT_LOC("sk=%p skip\n", sk);
+		}
 		return -1;
+	}
 
 	/* Use binary search for probe_size between tcp_mss_base,
 	 * and current mss_clamp. if (search_high - search_low)
@@ -2365,20 +2406,47 @@ static int tcp_mtu_probe(struct sock *sk)
 		 * another round of probing.
 		 */
 		tcp_mtu_check_reprobe(sk);
+		if (interesting_sk(sk))
+			QP_PRINT_LOC("sk=%p skip reprobe\n", sk);
 		return -1;
 	}
 
 	/* Have enough data in the send queue to probe? */
 	if (tp->write_seq - tp->snd_nxt < size_needed)
+	{
+		if (interesting_sk(sk))
+			QP_PRINT_LOC("sk=%p not enough data in send queue:"
+					" write_seq=%u"
+					" snd_nxt=%u"
+					" size_avalbl=%d"
+					" size_needed=%d"
+					" from probe_size=%d tp->reordering=%d tp->mss_cache=%d"
+					" snd_cwnd=%d"
+					"\n",
+					sk,
+					tp->write_seq, tp->snd_nxt,
+					tp->write_seq - tp->snd_nxt,
+					size_needed,
+					probe_size,
+					tp->reordering,
+					tp->mss_cache,
+					tp->snd_cwnd);
 		return -1;
+	}
 
 	if (tp->snd_wnd < size_needed)
 		return -1;
 	if (after(tp->snd_nxt + size_needed, tcp_wnd_end(tp)))
+	{
+		if (interesting_sk(sk))
+			QP_PRINT_LOC("sk=%p wait\n", sk);
 		return 0;
+	}
 
 	/* Do we need to wait to drain cwnd? With none in flight, don't stall */
 	if (tcp_packets_in_flight(tp) + 2 > tp->snd_cwnd) {
+		if (interesting_sk(sk))
+			QP_PRINT_LOC("sk=%p waitskip\n", sk);
 		if (!tcp_packets_in_flight(tp))
 			return -1;
 		else
@@ -2386,12 +2454,20 @@ static int tcp_mtu_probe(struct sock *sk)
 	}
 
 	if (!tcp_can_coalesce_send_queue_head(sk, probe_size))
+	{
+		if (interesting_sk(sk))
+			QP_PRINT_LOC("sk=%p skip\n", sk);
 		return -1;
+	}
 
 	/* We're allowed to probe.  Build it now. */
 	nskb = sk_stream_alloc_skb(sk, probe_size, GFP_ATOMIC, false);
 	if (!nskb)
+	{
+		if (interesting_sk(sk))
+			QP_PRINT_LOC("sk=%p skip\n", sk);
 		return -1;
+	}
 	sk_wmem_queued_add(sk, nskb->truesize);
 	sk_mem_charge(sk, nskb->truesize);
 
@@ -2457,9 +2533,13 @@ static int tcp_mtu_probe(struct sock *sk)
 		tp->mtu_probe.probe_seq_start = TCP_SKB_CB(nskb)->seq;
 		tp->mtu_probe.probe_seq_end = TCP_SKB_CB(nskb)->end_seq;
 
+		if (interesting_sk(sk))
+			QP_PRINT_LOC("sk=%p sent!\n", sk);
 		return 1;
 	}
 
+	if (interesting_sk(sk))
+		QP_PRINT_LOC("sk=%p send failed\n", sk);
 	return -1;
 }
 
@@ -2609,6 +2689,25 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	sent_pkts = 0;
 
 	tcp_mstamp_refresh(tp);
+	/*
+	 * Waiting for tcp probe data also applies when push_one=1
+	 * If user does many small writes we hold them until we have have enough
+	 * for a probe.
+	 */
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p"
+				" mss=%u"
+				" nonagle=%d"
+				" push_one=%d"
+				" write_avail=%u"
+				" caller=%ps\n",
+				sk,
+				mss_now,
+				nonagle,
+				push_one,
+				tp->write_seq - tp->snd_nxt,
+				__builtin_return_address(0));
+	}
 	if (!push_one) {
 		/* Do MTU probing. */
 		result = tcp_mtu_probe(sk);
@@ -2881,8 +2980,19 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 void tcp_push_one(struct sock *sk, unsigned int mss_now)
 {
 	struct sk_buff *skb = tcp_send_head(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
 
 	BUG_ON(!skb || skb->len < mss_now);
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p"
+				" mss_now=%u"
+				" write_available=%u"
+				" caller=%ps\n",
+				sk,
+				mss_now,
+				tp->write_seq - tp->snd_nxt,
+				__builtin_return_address(0));
+	}
 
 	tcp_write_xmit(sk, mss_now, TCP_NAGLE_PUSH, 1, sk->sk_allocation);
 }
