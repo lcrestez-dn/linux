@@ -17,6 +17,10 @@
 #include <linux/jhash.h>
 #include <net/tcp.h>
 
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
+#include <qp/qp.h>
+extern bool interesting_sk(struct sock *sk);
+
 static DEFINE_SPINLOCK(tcp_cong_list_lock);
 static LIST_HEAD(tcp_cong_list);
 
@@ -391,10 +395,20 @@ int tcp_set_congestion_control(struct sock *sk, const char *name, bool load,
  */
 u32 tcp_slow_start(struct tcp_sock *tp, u32 acked)
 {
-	u32 cwnd = min(tp->snd_cwnd + acked, tp->snd_ssthresh);
+	struct sock *sk = (struct sock*)tp;
+	u32 cwnd;
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p old snd_cwnd=%d snd_ssthresh=%d snd_cwnd_clamp=%d acked=%u\n",
+				sk, tp->snd_cwnd, tp->snd_ssthresh, tp->snd_cwnd_clamp, acked);
+	}
+
+	cwnd = min(tp->snd_cwnd + acked, tp->snd_ssthresh);
 
 	acked -= cwnd - tp->snd_cwnd;
 	tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p set snd_cwnd=%d caller=%ps\n", sk, tp->snd_cwnd, __builtin_return_address(0));
+	}
 
 	return acked;
 }
@@ -405,6 +419,18 @@ EXPORT_SYMBOL_GPL(tcp_slow_start);
  */
 void tcp_cong_avoid_ai(struct tcp_sock *tp, u32 w, u32 acked)
 {
+	struct sock *sk = (struct sock*)tp;
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p old snd_cwnd=%d"
+				" snd_cwnd_cnt=%d"
+				" snd_cwnd_clamp=%d"
+				" w=%u acked=%u\n",
+				sk,
+				tp->snd_cwnd,
+				tp->snd_cwnd_cnt,
+				tp->snd_cwnd_clamp,
+				w, acked);
+	}
 	/* If credits accumulated at a higher w, apply them gently now. */
 	if (tp->snd_cwnd_cnt >= w) {
 		tp->snd_cwnd_cnt = 0;
@@ -419,6 +445,9 @@ void tcp_cong_avoid_ai(struct tcp_sock *tp, u32 w, u32 acked)
 		tp->snd_cwnd += delta;
 	}
 	tp->snd_cwnd = min(tp->snd_cwnd, tp->snd_cwnd_clamp);
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p set snd_cwnd=%d caller=%ps\n", sk, tp->snd_cwnd, __builtin_return_address(0));
+	}
 }
 EXPORT_SYMBOL_GPL(tcp_cong_avoid_ai);
 
