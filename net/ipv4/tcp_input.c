@@ -2726,6 +2726,9 @@ static void tcp_mtup_probe_success(struct sock *sk)
 				tp->snd_ssthresh,
 				tp->prior_ssthresh);
 	}
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p set snd_cwnd=%d\n", sk, tp->snd_cwnd);
+	}
 }
 
 /* Do a simple retransmit without using the backoff mechanisms in
@@ -3043,7 +3046,7 @@ static void tcp_fastretrans_alert(struct sock *sk, const u32 prior_snd_una,
 			/* Restores the reduction we did in tcp_mtup_probe() */
 			tp->snd_cwnd++;
 			if (interesting_sk(sk)) {
-				QP_PRINT_LOC("sk=%p set snd_cwnd=%d\n", sk, tp->snd_cwnd);
+				QP_PRINT_LOC("sk=%p set snd_cwnd=%d increment after mtu probe failure\n", sk, tp->snd_cwnd);
 			}
 			tcp_simple_retransmit(sk);
 			return;

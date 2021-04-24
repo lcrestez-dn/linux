@@ -2524,6 +2524,8 @@ static int tcp_mtu_probe(struct sock *sk)
 	}
 	tcp_init_tso_segs(nskb, nskb->len);
 
+	if (interesting_sk(sk))
+		QP_PRINT_LOC("sk=%p send probe_size=%d\n", sk, icsk->icsk_mtup.probe_size);
 	/* We're ready to send.  If this fails, the probe will
 	 * be resegmented into mss-sized pieces by tcp_write_xmit().
 	 */
@@ -2537,8 +2539,11 @@ static int tcp_mtu_probe(struct sock *sk)
 		tp->mtu_probe.probe_seq_start = TCP_SKB_CB(nskb)->seq;
 		tp->mtu_probe.probe_seq_end = TCP_SKB_CB(nskb)->end_seq;
 
+		if (interesting_sk(sk)) {
+			QP_PRINT_LOC("sk=%p set snd_cwnd=%d caller=%p\n", sk, tp->snd_cwnd, __builtin_return_address(0));
+		}
 		if (interesting_sk(sk))
-			QP_PRINT_LOC("sk=%p sent!\n", sk);
+			QP_PRINT_LOC("sk=%p sent probe_size=%d\n", sk, icsk->icsk_mtup.probe_size);
 		return 1;
 	}
 

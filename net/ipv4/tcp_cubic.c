@@ -30,6 +30,10 @@
 #include <net/tcp.h>
 #include <linux/tcp_stats.h>
 
+#define QP_PRINT QP_PRINT_IMPL_LINUX_KERNEL_TRACE
+#include <qp/qp.h>
+extern bool interesting_sk(struct sock *sk);
+
 #define BICTCP_BETA_SCALE    1024	/* Scale factor beta calculation
 					 * max_cwnd = snd_cwnd * beta
 					 */
@@ -325,6 +329,24 @@ static void cubictcp_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct bictcp *ca = inet_csk_ca(sk);
 
+	if (interesting_sk(sk)) {
+		QP_PRINT_LOC("sk=%p"
+				" snd_cwnd=%d snd_ssthresh=%d"
+				" max_packets_out=%d"
+				" tp->is_cwnd_limited=%d"
+				" tcp_cwnd_limited()=%d"
+				" tcp_in_slow_start()=%d"
+				" ack=%u acked=%u"
+				"\n",
+				sk,
+				tp->snd_cwnd, tp->snd_ssthresh,
+				tp->max_packets_out,
+				tp->is_cwnd_limited,
+				tcp_is_cwnd_limited(sk),
+				tcp_in_slow_start(tp),
+				ack,
+				acked);
+	}
 	if (!tcp_is_cwnd_limited(sk))
 		return;
 
