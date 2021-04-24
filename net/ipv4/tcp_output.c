@@ -2370,7 +2370,7 @@ static int tcp_mtu_probe(struct sock *sk)
 	if (likely(!icsk->icsk_mtup.enabled ||
 		   icsk->icsk_mtup.probe_size ||
 		   inet_csk(sk)->icsk_ca_state != TCP_CA_Open ||
-		   tp->snd_cwnd < 11 ||
+		   tp->snd_cwnd < net->ipv4.sysctl_tcp_mtu_probe_cwnd_threshold ||
 		   tp->rx_opt.num_sacks || tp->rx_opt.dsack))
 	{
 		if (interesting_sk(sk)) {

@@ -123,6 +123,7 @@ struct netns_ipv4 {
 	u8 sysctl_tcp_l3mdev_accept;
 #endif
 	u8 sysctl_tcp_mtu_probing;
+	int sysctl_tcp_mtu_probe_cwnd_threshold;
 	int sysctl_tcp_mtu_probe_floor;
 	int sysctl_tcp_base_mss;
 	int sysctl_tcp_min_snd_mss;
