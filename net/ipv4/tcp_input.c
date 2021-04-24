@@ -2676,7 +2676,6 @@ static void tcp_mtup_probe_failed(struct sock *sk)
 		QP_PRINT_LOC("sk=%p probe_size=%d\n",
 				sk,
 				icsk->icsk_mtup.probe_size);
-		QP_DUMP_STACK();
 	}
 	icsk->icsk_mtup.search_high = icsk->icsk_mtup.probe_size - 1;
 	icsk->icsk_mtup.probe_size = 0;
