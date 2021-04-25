@@ -334,7 +334,7 @@ static void cubictcp_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 				" snd_cwnd=%d snd_ssthresh=%d"
 				" max_packets_out=%d"
 				" tp->is_cwnd_limited=%d"
-				" tcp_cwnd_limited()=%d"
+				" tcp_is_cwnd_limited()=%d"
 				" tcp_in_slow_start()=%d"
 				" ack=%u acked=%u"
 				"\n",
