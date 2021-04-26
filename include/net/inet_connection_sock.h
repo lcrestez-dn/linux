@@ -132,9 +132,6 @@ struct inet_connection_sock {
 				  enabled:1;
 
 		u32		  probe_timestamp;
-
-		/* Timer for wait_data */
-		struct	  timer_list	wait_data_timer;
 	} icsk_mtup;
 	u32			  icsk_probes_tstamp;
 	u32			  icsk_user_timeout;
