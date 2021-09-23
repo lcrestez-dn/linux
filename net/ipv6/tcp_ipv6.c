@@ -42,6 +42,7 @@
 #include <linux/indirect_call_wrapper.h>
 
 #include <net/tcp.h>
+#include <net/tcp_authopt.h>
 #include <net/ndisc.h>
 #include <net/inet6_hashtables.h>
 #include <net/inet6_connection_sock.h>
@@ -817,9 +818,33 @@ static void tcp_v6_send_response(const struct sock *sk, struct sk_buff *skb, u32
 	struct dst_entry *dst;
 	__be32 *topt;
 	__u32 mark = 0;
+#ifdef CONFIG_TCP_AUTHOPT
+	struct tcp_authopt_info *authopt_info = NULL;
+	struct tcp_authopt_key_info *authopt_key_info = NULL;
+	u8 authopt_rnextkeyid;
+#endif
 
 	if (tsecr)
 		tot_len += TCPOLEN_TSTAMP_ALIGNED;
+#ifdef CONFIG_TCP_AUTHOPT
+	/* Key lookup before SKB allocation */
+	if (static_branch_unlikely(&tcp_authopt_needed) && sk)
+	{
+		if (sk->sk_state == TCP_TIME_WAIT)
+			authopt_info = tcp_twsk(sk)->tw_authopt_info;
+		else
+			authopt_info = rcu_dereference(tcp_sk(sk)->authopt_info);
+
+		if (authopt_info) {
+			authopt_key_info = __tcp_authopt_select_key(sk, authopt_info, sk, &authopt_rnextkeyid, false);
+			if (authopt_key_info) {
+				tot_len += TCPOLEN_AUTHOPT_OUTPUT;
+				/* Don't use MD5 */
+				key = NULL;
+			}
+		}
+	}
+#endif
 #ifdef CONFIG_TCP_MD5SIG
 	if (key)
 		tot_len += TCPOLEN_MD5SIG_ALIGNED;
@@ -862,6 +887,17 @@ static void tcp_v6_send_response(const struct sock *sk, struct sk_buff *skb, u32
 		tcp_v6_md5_hash_hdr((__u8 *)topt, key,
 				    &ipv6_hdr(skb)->saddr,
 				    &ipv6_hdr(skb)->daddr, t1);
+	}
+#endif
+#ifdef CONFIG_TCP_AUTHOPT
+	/* Compute the TCP-AO mac. Unlike in the ipv4 case we have a real SKB */
+	if (static_branch_unlikely(&tcp_authopt_needed) && authopt_key_info)
+	{
+		*topt++ = htonl((TCPOPT_AUTHOPT << 24) |
+				(TCPOLEN_AUTHOPT_OUTPUT << 16) |
+				(authopt_key_info->send_id << 8) |
+				(authopt_rnextkeyid));
+		tcp_authopt_hash((char*)topt, authopt_key_info, (struct sock*)sk, buff);
 	}
 #endif
 
@@ -1476,6 +1512,22 @@ static void tcp_v6_fill_cb(struct sk_buff *skb, const struct ipv6hdr *hdr,
 			skb->tstamp || skb_hwtstamps(skb)->hwtstamp;
 }
 
+static int tcp_v6_auth_inbound_check(
+		struct sock *sk,
+		struct sk_buff *skb,
+		int dif, int sdif)
+{
+	int aoret;
+
+	aoret = tcp_authopt_inbound_check(sk, skb);
+	if (aoret < 0)
+		return aoret;
+	if (aoret > 0)
+		return 0;
+
+	return tcp_v6_inbound_md5_hash(sk, skb, dif, sdif);
+}
+
 INDIRECT_CALLABLE_SCOPE int tcp_v6_rcv(struct sk_buff *skb)
 {
 	struct sk_buff *skb_to_free;
@@ -1528,7 +1580,7 @@ process:
 		struct sock *nsk;
 
 		sk = req->rsk_listener;
-		if (tcp_v6_inbound_md5_hash(sk, skb)) {
+		if (tcp_v6_auth_inbound_check(sk, skb, dif, sdif)) {
 			sk_drops_add(sk, skb);
 			reqsk_put(req);
 			goto discard_it;
@@ -1583,7 +1635,7 @@ process:
 	if (!xfrm6_policy_check(sk, XFRM_POLICY_IN, skb))
 		goto discard_and_relse;
 
-	if (tcp_v6_inbound_md5_hash(sk, skb))
+	if (tcp_v6_auth_inbound_check(sk, skb, dif, sdif))
 		goto discard_and_relse;
 
 	if (tcp_filter(sk, skb))

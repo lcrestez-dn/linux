@@ -33,6 +33,7 @@ Contents:
    scaling
    tls
    tls-offload
+   tcp_authopt
 
 .. only::  subproject and html
 
