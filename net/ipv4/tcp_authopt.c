@@ -421,24 +421,22 @@ static struct tcp_authopt_info *__tcp_authopt_info_get_or_create(struct sock *sk
  *
  * This allows sockopts to grow as long as for new fields zeros has no effect.
  */
-static int _copy_from_sockptr_tolerant(u8 *dst,
+static int _copy_from_sockptr_tolerant(u8* dst,
 				       unsigned int dstlen,
-				       sockptr_t src,
+				       char __user *src,
 				       unsigned int srclen)
 {
 	int err;
 
 	/* If userspace optlen is too short fill the rest with zeros */
 	if (srclen > dstlen) {
-		if (sockptr_is_kernel(src))
-			return -EINVAL;
-		err = check_zeroed_user(src.user + dstlen, srclen - dstlen);
+		err = check_zeroed_user(src + dstlen, srclen - dstlen);
 		if (err < 0)
 			return err;
 		if (err == 0)
 			return -EINVAL;
 	}
-	err = copy_from_sockptr(dst, src, min(srclen, dstlen));
+	err = copy_from_user(dst, src, min(srclen, dstlen));
 	if (err)
 		return err;
 	if (srclen < dstlen)
@@ -447,7 +445,7 @@ static int _copy_from_sockptr_tolerant(u8 *dst,
 	return err;
 }
 
-int tcp_set_authopt(struct sock *sk, sockptr_t optval, unsigned int optlen)
+int tcp_set_authopt(struct sock *sk, char __user *optval, unsigned int optlen)
 {
 	struct tcp_authopt opt;
 	struct tcp_authopt_info *info;
@@ -560,7 +558,7 @@ void tcp_authopt_clear(struct sock *sk)
 	TCP_AUTHOPT_KEY_ADDR_BIND | \
 	TCP_AUTHOPT_KEY_IFINDEX)
 
-int tcp_set_authopt_key(struct sock *sk, sockptr_t optval, unsigned int optlen)
+int tcp_set_authopt_key(struct sock *sk, char __user *optval, unsigned int optlen)
 {
 	struct tcp_authopt_key opt;
 	struct tcp_authopt_info *info;
