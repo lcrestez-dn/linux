@@ -129,7 +129,7 @@ static inline struct tcp_authopt_info* get_tcp_tw_authopt_info(struct tcp_timewa
 
 #ifdef CONFIG_TCP_AUTHOPT
 extern int sysctl_tcp_authopt;
-DECLARE_STATIC_KEY_FALSE(tcp_authopt_needed);
+extern int tcp_authopt_needed;
 
 void tcp_authopt_free(struct sock *sk, struct tcp_authopt_info *info);
 void tcp_authopt_clear(struct sock *sk);
@@ -148,7 +148,7 @@ static inline struct tcp_authopt_key_info *tcp_authopt_select_key(
 		struct tcp_authopt_info **info,
 		u8 *rnextkeyid)
 {
-	if (static_branch_unlikely(&tcp_authopt_needed)) {
+	if (tcp_authopt_needed) {
 		*info = get_tcp_authopt_info(tcp_sk(sk));
 
 		if (*info)
@@ -182,7 +182,7 @@ static inline int tcp_authopt_openreq(
 void __tcp_authopt_time_wait(struct tcp_timewait_sock *tcptw, struct tcp_sock *tp);
 static inline void tcp_authopt_time_wait(struct tcp_timewait_sock *tcptw, struct tcp_sock *tp)
 {
-	if (static_branch_unlikely(&tcp_authopt_needed))
+	if (tcp_authopt_needed)
 		return __tcp_authopt_time_wait(tcptw, tp);
 }
 int __tcp_authopt_inbound_check(
@@ -196,7 +196,7 @@ int __tcp_authopt_inbound_check(
  */
 static inline int tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb)
 {
-	if (static_branch_unlikely(&tcp_authopt_needed)) {
+	if (tcp_authopt_needed) {
 		struct tcp_authopt_info *info = get_tcp_authopt_info(tcp_sk(sk));
 
 		if (info)
@@ -210,7 +210,7 @@ static inline void tcp_authopt_update_rcv_sne(struct tcp_sock *tp, u32 seq)
 {
 	struct tcp_authopt_info *info;
 
-	if (static_branch_unlikely(&tcp_authopt_needed)) {
+	if (tcp_authopt_needed) {
 		rcu_read_lock();
 		info = get_tcp_authopt_info(tp);
 		if (info)
@@ -223,7 +223,7 @@ static inline void tcp_authopt_update_snd_sne(struct tcp_sock *tp, u32 seq)
 {
 	struct tcp_authopt_info *info;
 
-	if (static_branch_unlikely(&tcp_authopt_needed)) {
+	if (tcp_authopt_needed) {
 		rcu_read_lock();
 		info = get_tcp_authopt_info(tp);
 		if (info)
