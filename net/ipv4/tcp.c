@@ -270,6 +270,7 @@
 
 #include <net/icmp.h>
 #include <net/inet_common.h>
+#define CONFIG_TCP_AUTHOPT 1
 #include <net/tcp.h>
 #include <net/tcp_authopt.h>
 #include <net/xfrm.h>
