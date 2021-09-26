@@ -379,7 +379,6 @@ struct tcp_authopt_key_info *__tcp_authopt_select_key(const struct sock *sk,
 
 	return key;
 }
-EXPORT_SYMBOL(__tcp_authopt_select_key);
 
 static struct tcp_authopt_info *__tcp_authopt_info_get_or_create(struct sock *sk)
 {
@@ -1414,7 +1413,6 @@ fail:
 	memset(hash_location, 0, TCP_AUTHOPT_MACLEN);
 	return err;
 }
-EXPORT_SYMBOL(tcp_authopt_hash);
 
 /**
  * tcp_v4_authopt_hash_reply - Hash tcp+ipv4 header without SKB
@@ -1633,4 +1631,3 @@ accept:
 
 	return 1;
 }
-EXPORT_SYMBOL(__tcp_authopt_inbound_check);
