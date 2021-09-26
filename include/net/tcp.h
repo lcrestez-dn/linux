@@ -1608,7 +1608,7 @@ tcp_md5_do_lookup(const struct sock *sk,
 		  const union tcp_md5_addr *addr,
 		  int family)
 {
-	if (!static_branch_unlikely(&tcp_md5_needed))
+	if (!static_key_enabled(&tcp_md5_needed))
 		return NULL;
 	return __tcp_md5_do_lookup(sk, addr, family);
 }
