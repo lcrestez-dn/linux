@@ -2309,7 +2309,7 @@ static inline void tcp_add_tx_delay(struct sk_buff *skb,
  */
 static inline u64 tcp_transmit_time(const struct sock *sk)
 {
-	if (static_branch_unlikely(&tcp_tx_delay_enabled)) {
+	if (static_key_enabled(&tcp_tx_delay_enabled)) {
 		u32 delay = (sk->sk_state == TCP_TIME_WAIT) ?
 			tcp_twsk(sk)->tw_tx_delay : tcp_sk(sk)->tcp_tx_delay;
 
