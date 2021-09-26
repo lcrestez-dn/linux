@@ -243,6 +243,7 @@
 
 #define pr_fmt(fmt) "TCP: " fmt
 
+#define CONFIG_TCP_AUTHOPT 1
 #include <crypto/hash.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -270,9 +271,7 @@
 
 #include <net/icmp.h>
 #include <net/inet_common.h>
-#define CONFIG_TCP_AUTHOPT 1
 #include <net/tcp.h>
-#include <net/tcp_authopt.h>
 #include <net/xfrm.h>
 #include <net/ip.h>
 #include <net/sock.h>
@@ -280,6 +279,7 @@
 #include <linux/uaccess.h>
 #include <asm/ioctls.h>
 #include <net/busy_poll.h>
+#include <net/tcp_authopt.h>
 
 struct percpu_counter tcp_orphan_count;
 EXPORT_SYMBOL_GPL(tcp_orphan_count);
