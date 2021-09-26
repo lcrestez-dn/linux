@@ -982,7 +982,11 @@ static inline void sock_rps_record_flow_hash(__u32 hash)
 static inline void sock_rps_record_flow(const struct sock *sk)
 {
 #ifdef CONFIG_RPS
+#ifdef CONFIG_TCP_AUTHOPT
+	if (static_key_enabled(&rfs_needed)) {
+#else
 	if (static_branch_unlikely(&rfs_needed)) {
+#endif
 		/* Reading sk->sk_rxhash might incur an expensive cache line
 		 * miss.
 		 *
@@ -1483,7 +1487,11 @@ static inline void sk_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
 	sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
 	sk_wmem_queued_add(sk, -skb->truesize);
 	sk_mem_uncharge(sk, skb->truesize);
+#ifdef CONFIG_TCP_AUTHOPT
+	if (static_key_enabled(&tcp_tx_skb_cache_key) &&
+#else
 	if (static_branch_unlikely(&tcp_tx_skb_cache_key) &&
+#endif
 	    !sk->sk_tx_skb_cache && !skb_cloned(skb)) {
 		skb_zcopy_clear(skb, true);
 		sk->sk_tx_skb_cache = skb;
