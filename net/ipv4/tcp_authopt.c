@@ -12,7 +12,7 @@ int sysctl_tcp_authopt = 1;
 int tcp_authopt_needed = 0;
 
 /* only for CONFIG_IPV6=m */
-EXPORT_SYMBOL(tcp_authopt_needed);
+//EXPORT_SYMBOL(tcp_authopt_needed);
 
 /* All current algorithms have a mac length of 12 but crypto API digestsize can be larger */
 #define TCP_AUTHOPT_MAXMACBUF			20
@@ -1470,4 +1470,4 @@ accept:
 	return 1;
 }
 /* only for CONFIG_IPV6=m */
-EXPORT_SYMBOL(__tcp_authopt_inbound_check);
+//EXPORT_SYMBOL(__tcp_authopt_inbound_check);
