@@ -421,7 +421,7 @@ static inline bool tcp_urg_mode(const struct tcp_sock *tp)
 static void smc_options_write(__be32 *ptr, u16 *options)
 {
 #if IS_ENABLED(CONFIG_SMC)
-	if (static_branch_unlikely(&tcp_have_smc)) {
+	if (static_key_enabled(&tcp_have_smc)) {
 		if (unlikely(OPTION_SMC & *options)) {
 			*ptr++ = htonl((TCPOPT_NOP  << 24) |
 				       (TCPOPT_NOP  << 16) |
@@ -579,7 +579,7 @@ static void smc_set_option(const struct tcp_sock *tp,
 			   unsigned int *remaining)
 {
 #if IS_ENABLED(CONFIG_SMC)
-	if (static_branch_unlikely(&tcp_have_smc)) {
+	if (static_key_enabled(&tcp_have_smc)) {
 		if (tp->syn_smc) {
 			if (*remaining >= TCPOLEN_EXP_SMC_BASE_ALIGNED) {
 				opts->options |= OPTION_SMC;
@@ -596,7 +596,7 @@ static void smc_set_option_cond(const struct tcp_sock *tp,
 				unsigned int *remaining)
 {
 #if IS_ENABLED(CONFIG_SMC)
-	if (static_branch_unlikely(&tcp_have_smc)) {
+	if (static_key_enabled(&tcp_have_smc)) {
 		if (tp->syn_smc && ireq->smc_ok) {
 			if (*remaining >= TCPOLEN_EXP_SMC_BASE_ALIGNED) {
 				opts->options |= OPTION_SMC;
@@ -640,7 +640,7 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 
 	remaining -= tcp_authopt_init_options(sk, sk, opts);
 #ifdef CONFIG_TCP_MD5SIG
-	if (static_branch_unlikely(&tcp_md5_needed) &&
+	if (static_key_enabled(&tcp_md5_needed) &&
 	    !(opts->options & OPTION_AUTHOPT) &&
 	    rcu_access_pointer(tp->md5sig_info)) {
 		*md5 = tp->af_specific->md5_lookup(sk, sk);
@@ -782,7 +782,7 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 	size += tcp_authopt_init_options(sk, sk, opts);
 	*md5 = NULL;
 #ifdef CONFIG_TCP_MD5SIG
-	if (static_branch_unlikely(&tcp_md5_needed) &&
+	if (static_key_enabled(&tcp_md5_needed) &&
 	    !(opts->options & OPTION_AUTHOPT) &&
 	    rcu_access_pointer(tp->md5sig_info)) {
 		*md5 = tp->af_specific->md5_lookup(sk, sk);
