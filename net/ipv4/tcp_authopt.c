@@ -416,7 +416,7 @@ static int _copy_from_sockptr_tolerant(
 	if (err)
 		return err;
 	if (srclen < dstlen)
-		memset(dst + dstlen, 0, dstlen - srclen);
+		memset(dst + srclen, 0, dstlen - srclen);
 
 	return err;
 }
