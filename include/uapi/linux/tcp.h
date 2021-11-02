@@ -331,6 +331,8 @@ struct tcp_diag_md5sig {
 	__u8	tcpm_key[TCP_MD5SIG_MAXKEYLEN];
 };
 
+#ifndef __GENKSYMS__
+
 /**
  * enum tcp_authopt_flag - flags for `tcp_authopt.flags`
  */
@@ -465,6 +467,8 @@ struct tcp_authopt_key {
 	 */
 	int	prefixlen;
 };
+
+#endif /* __GENKSYMS__ */
 
 /* setsockopt(fd, IPPROTO_TCP, TCP_ZEROCOPY_RECEIVE, ...) */
 
