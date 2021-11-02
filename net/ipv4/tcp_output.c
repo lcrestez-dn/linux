@@ -414,7 +414,7 @@ static inline bool tcp_urg_mode(const struct tcp_sock *tp)
 #define OPTION_TS		(1 << 1)
 #define OPTION_MD5		(1 << 2)
 #define OPTION_WSCALE		(1 << 3)
-#define OPTION_AUTHOPT		BIT(4)
+#define OPTION_AUTHOPT		(1 << 4)
 #define OPTION_FAST_OPEN_COOKIE	(1 << 8)
 #define OPTION_SMC		(1 << 9)
 
@@ -438,13 +438,16 @@ struct tcp_out_options {
 	u16 mss;		/* 0 to disable */
 	u8 ws;			/* window scale, 0 to disable */
 	u8 num_sack_blocks;	/* number of SACK blocks to include */
-	u8 hash_size;		/* bytes in hash_location */
 #ifdef CONFIG_TCP_AUTHOPT
 	u8 authopt_rnextkeyid;	/* rnextkey */
 #endif
 	__u8 *hash_location;	/* temporary pointer, overloaded */
 	__u32 tsval, tsecr;	/* need to include OPTION_TS */
 	struct tcp_fastopen_cookie *fastopen_cookie;	/* Fast open cookie */
+#ifdef CONFIG_TCP_AUTHOPT
+	struct tcp_authopt_info *authopt_info;
+	struct tcp_authopt_key_info *authopt_key;
+#endif
 };
 
 /* Write previously computed TCP options to the packet.
