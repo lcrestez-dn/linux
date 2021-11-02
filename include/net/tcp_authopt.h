@@ -2,6 +2,8 @@
 #ifndef _LINUX_TCP_AUTHOPT_H
 #define _LINUX_TCP_AUTHOPT_H
 
+#ifndef __GENKSYMS__
+
 #include <uapi/linux/tcp.h>
 #include <net/netns/tcp_authopt.h>
 #include <linux/tcp.h>
@@ -327,4 +329,5 @@ static inline void tcp_authopt_update_snd_sne(struct tcp_sock *tp, u32 seq)
 }
 #endif
 
+#endif /* __GENKSYMS__ */
 #endif /* _LINUX_TCP_AUTHOPT_H */
