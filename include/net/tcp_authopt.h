@@ -2,6 +2,8 @@
 #ifndef _LINUX_TCP_AUTHOPT_H
 #define _LINUX_TCP_AUTHOPT_H
 
+#ifndef __GENKSYMS__
+
 #include <uapi/linux/tcp.h>
 #include <linux/livepatch.h>
 
@@ -210,4 +212,5 @@ static inline int tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb
 }
 #endif
 
+#endif /* __GENKSYMS__ */
 #endif /* _LINUX_TCP_AUTHOPT_H */
