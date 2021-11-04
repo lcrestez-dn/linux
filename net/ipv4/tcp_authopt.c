@@ -1652,7 +1652,6 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb, struct tcp
 	}
 	if (opt && !key) {
 		/* Keys are configured for peer but with different keyid than packet */
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPAUTHOPTFAILURE);
 		print_tcpao_notice("TCP Authentication Failed", skb);
 		return -EINVAL;
 	}
