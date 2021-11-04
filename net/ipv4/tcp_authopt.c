@@ -1500,16 +1500,16 @@ out_err_traffic_key:
 static struct tcp_authopt_key_info *tcp_authopt_lookup_recv(struct sock *sk,
 							    struct sk_buff *skb,
 							    struct tcp_authopt_info *info,
-							    int recv_id)
+							    int recv_id,
+							    bool *anykey)
 {
 	struct tcp_authopt_key_info *result = NULL;
 	struct tcp_authopt_key_info *key;
 	int l3index = -1;
 
+	*anykey = false;
 	/* multiple matches will cause occasional failures */
 	hlist_for_each_entry_rcu(key, &info->head, node, 0) {
-		if (recv_id >= 0 && key->recv_id != recv_id)
-			continue;
 		if (key->flags & TCP_AUTHOPT_KEY_ADDR_BIND &&
 		    !tcp_authopt_key_match_skb_addr(key, skb))
 			continue;
@@ -1528,6 +1528,9 @@ static struct tcp_authopt_key_info *tcp_authopt_lookup_recv(struct sock *sk,
 			if (l3index != key->l3index)
 				continue;
 		}
+		*anykey = true;
+		if (recv_id >= 0 && key->recv_id != recv_id)
+			continue;
 		if (better_key_match(result, key))
 			result = key;
 		else if (result)
@@ -1563,6 +1566,7 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb, struct tcp
 	struct tcphdr *th = (struct tcphdr *)skb_transport_header(skb);
 	struct tcphdr_authopt *opt;
 	struct tcp_authopt_key_info *key;
+	bool anykey;
 	u8 macbuf[TCP_AUTHOPT_MAXMACBUF];
 	int err;
 
@@ -1577,7 +1581,7 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb, struct tcp
 		return -EINVAL;
 	}
 #endif
-	key = tcp_authopt_lookup_recv(sk, skb, info, opt ? opt->keyid : -1);
+	key = tcp_authopt_lookup_recv(sk, skb, info, opt ? opt->keyid : -1, &anykey);
 
 	/* nothing found or expected */
 	if (!opt && !key)
@@ -1586,7 +1590,7 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb, struct tcp
 		print_tcpao_notice("TCP Authentication Missing", skb);
 		return -EINVAL;
 	}
-	if (opt && !key) {
+	if (opt && !anykey) {
 		/* RFC5925 Section 7.3:
 		 * A TCP-AO implementation MUST allow for configuration of the behavior
 		 * of segments with TCP-AO but that do not match an MKT. The initial
@@ -1599,6 +1603,12 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb, struct tcp
 		}
 		print_tcpao_notice("TCP Authentication Unexpected: Accepted", skb);
 		goto accept;
+	}
+	if (opt && !key) {
+		/* Keys are configured for peer but with different keyid than packet */
+		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPAUTHOPTFAILURE);
+		print_tcpao_notice("TCP Authentication Failed", skb);
+		return -EINVAL;
 	}
 
 	/* bad inbound key len */
