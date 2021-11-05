@@ -1619,6 +1619,17 @@ static void print_tcpao_notice(const char *msg, struct sk_buff *skb)
 	}
 }
 
+static inline void inc_shadow_fail_count(struct sock *sk)
+{
+	struct tcp_authopt_net_shadow *sh;
+
+	sh = get_tcp_authopt_net_shadow(sock_net(sk));
+	if (WARN_ONCE(!sh, "missing net shadow"))
+		return;
+
+	atomic64_inc(&sh->fail_count);
+}
+
 int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb, struct tcp_authopt_info *info, const u8* _opt)
 {
 	struct tcphdr_authopt *opt = (struct tcphdr_authopt*)_opt;
@@ -1634,6 +1645,7 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb, struct tcp
 		return 0;
 	if (!opt && key) {
 		print_tcpao_notice("TCP Authentication Missing", skb);
+		inc_shadow_fail_count(sk);
 		return -EINVAL;
 	}
 	if (opt && !anykey) {
@@ -1645,6 +1657,7 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb, struct tcp
 		 */
 		if (info->flags & TCP_AUTHOPT_FLAG_REJECT_UNEXPECTED) {
 			print_tcpao_notice("TCP Authentication Unexpected: Rejected", skb);
+			inc_shadow_fail_count(sk);
 			return -EINVAL;
 		}
 		print_tcpao_notice("TCP Authentication Unexpected: Accepted", skb);
@@ -1653,6 +1666,7 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb, struct tcp
 	if (opt && !key) {
 		/* Keys are configured for peer but with different keyid than packet */
 		print_tcpao_notice("TCP Authentication Failed", skb);
+		inc_shadow_fail_count(sk);
 		return -EINVAL;
 	}
 
@@ -1666,6 +1680,7 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb, struct tcp
 
 	if (memcmp(macbuf, opt->mac, TCP_AUTHOPT_MACLEN)) {
 		print_tcpao_notice("TCP Authentication Failed", skb);
+		inc_shadow_fail_count(sk);
 		return -EINVAL;
 	}
 
@@ -1687,12 +1702,39 @@ accept:
 	return 1;
 }
 
+int tcp_authopt_init_net(struct net *net)
+{
+	struct tcp_authopt_sock_shadow *sh;
+
+	sh = klp_shadow_alloc(net, TCP_AUTHOPT_NET_SHADOW, sizeof(*sh),
+			      GFP_KERNEL | __GFP_ZERO,
+			      NULL, NULL);
+
+	return sh ? 0 : -ENOMEM;
+}
+
+void tcp_authopt_exit_net(struct net *net)
+{
+	klp_shadow_free(net, TCP_AUTHOPT_NET_SHADOW, NULL);
+}
+
+// FIXME: determine if actually building kpatch?
 #if 1
 #include "kpatch-macros.h"
 
 static int tcp_authopt_pre_patch(patch_object *obj)
 {
+	struct net *net;
+
 	pr_info("%s: pre patch\n", __func__);
+	dump_stack();
+	rtnl_lock();
+	down_write(&net_rwsem);
+	for_each_net(net)
+		tcp_authopt_init_net(net);
+	up_write(&net_rwsem);
+	rtnl_unlock();
+	pr_info("%s: pre patch done\n", __func__);
 	return 0;
 }
 
