@@ -232,7 +232,7 @@ static inline int tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb
 static inline int tcp_authopt_inbound_check_req(struct request_sock *req, struct sk_buff *skb, const u8 *opt) {
 	if (tcp_authopt_needed) {
 		struct sock *lsk = req->rsk_listener;
-		struct tcp_authopt_info *info = rcu_dereference(tcp_sk(lsk)->authopt_info);
+		struct tcp_authopt_info *info = get_tcp_authopt_info(tcp_sk(lsk));
 
 		if (info)
 			return __tcp_authopt_inbound_check((struct sock *)req, skb, info, opt);
