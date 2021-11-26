@@ -1894,10 +1894,7 @@ static void tcp_v4_fill_cb(struct sk_buff *skb, const struct iphdr *iph,
 			skb->tstamp || skb_hwtstamps(skb)->hwtstamp;
 }
 
-static int tcp_v4_sig_check(struct sock *sk,
-			    struct sk_buff *skb,
-			    int dif,
-			    int sdif)
+static int tcp_v4_sig_check(struct sock *sk, struct sk_buff *skb)
 {
 	const u8 *md5, *ao;
 	int ret;
@@ -1913,10 +1910,7 @@ static int tcp_v4_sig_check(struct sock *sk,
 	return tcp_v4_inbound_md5_hash(sk, skb, md5);
 }
 
-static int tcp_v4_sig_check_req(struct request_sock *req,
-				struct sk_buff *skb,
-				int dif,
-				int sdif)
+static int tcp_v4_sig_check_req(struct request_sock *req, struct sk_buff *skb)
 {
 	struct sock *lsk = req->rsk_listener;
 	const u8 *md5, *ao;

@@ -700,13 +700,8 @@ clear_hash_noput:
 #endif
 
 static bool tcp_v6_inbound_md5_hash(const struct sock *sk,
-<<<<<<<
-				    const struct sk_buff *skb)
-=======
 				    const struct sk_buff *skb,
-				    int dif, int sdif,
 				    const u8 *hash_location)
->>>>>>>
 {
 #ifdef CONFIG_TCP_MD5SIG
 	struct tcp_md5sig_key *hash_expected;
@@ -716,15 +711,6 @@ static bool tcp_v6_inbound_md5_hash(const struct sock *sk,
 	u8 newhash[16];
 
 	hash_expected = tcp_v6_md5_do_lookup(sk, &ip6h->saddr);
-<<<<<<<
-	hash_location = tcp_parse_md5sig_option(th);
-=======
-	 * in an L3 domain and dif is set to the l3mdev
-	 */
-	l3index = sdif ? dif : 0;
-
-	hash_expected = tcp_v6_md5_do_lookup(sk, &ip6h->saddr, l3index);
->>>>>>>
 
 	/* We've parsed the options - do we have a hash? */
 	if (!hash_expected && !hash_location)
@@ -1550,10 +1536,7 @@ static void tcp_v6_fill_cb(struct sk_buff *skb, const struct ipv6hdr *hdr,
 			skb->tstamp || skb_hwtstamps(skb)->hwtstamp;
 }
 
-static int tcp_v6_sig_check(struct sock *sk,
-			    struct sk_buff *skb,
-			    int dif,
-			    int sdif)
+static int tcp_v6_sig_check(struct sock *sk, struct sk_buff *skb)
 {
 	const u8 *md5, *ao;
 	int ret;
@@ -1569,10 +1552,7 @@ static int tcp_v6_sig_check(struct sock *sk,
 	return tcp_v6_inbound_md5_hash(sk, skb, md5);
 }
 
-static int tcp_v6_sig_check_req(struct request_sock *req,
-				struct sk_buff *skb,
-				int dif,
-				int sdif)
+static int tcp_v6_sig_check_req(struct request_sock *req, struct sk_buff *skb)
 {
 	struct sock *lsk = req->rsk_listener;
 	const u8 *md5, *ao;
@@ -1641,11 +1621,7 @@ process:
 		struct sock *nsk;
 
 		sk = req->rsk_listener;
-<<<<<<<
-		if (tcp_v6_inbound_md5_hash(sk, skb)) {
-=======
-		if (tcp_v6_sig_check_req(req, skb, dif, sdif)) {
->>>>>>>
+		if (tcp_v6_sig_check_req(req, skb)) {
 			sk_drops_add(sk, skb);
 			reqsk_put(req);
 			goto discard_it;
@@ -1700,11 +1676,7 @@ process:
 	if (!xfrm6_policy_check(sk, XFRM_POLICY_IN, skb))
 		goto discard_and_relse;
 
-<<<<<<<
-	if (tcp_v6_inbound_md5_hash(sk, skb))
-=======
-	if (tcp_v6_sig_check(sk, skb, dif, sdif))
->>>>>>>
+	if (tcp_v6_sig_check(sk, skb))
 		goto discard_and_relse;
 
 	if (tcp_filter(sk, skb))
