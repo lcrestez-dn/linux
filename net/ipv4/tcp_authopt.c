@@ -556,7 +556,7 @@ int tcp_get_repair_authopt_val(struct sock *sk, struct tcp_repair_authopt *opt)
 	if (err)
 		return err;
 
-	info = rcu_dereference_check(tp->authopt_info, lockdep_sock_is_held(sk));
+	info = get_tcp_authopt_info(tp);
 	if (!info)
 		return -ENOENT;
 
