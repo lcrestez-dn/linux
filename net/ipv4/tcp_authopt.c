@@ -25,6 +25,12 @@ struct tcp_authopt_alg_pool {
 	struct ahash_request *req;
 };
 
+/* Upstream added sk_gso_disable, insert an equivalent for backport. */
+static inline void sk_gso_disable(struct sock *sk)
+{
+	sk_nocaps_add(sk, NETIF_F_GSO_MASK);
+}
+
 /* Constant data with per-algorithm information from RFC5926
  * The "KDF" and "MAC" happen to be the same for both algorithms.
  */
