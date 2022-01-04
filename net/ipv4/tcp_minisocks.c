@@ -27,9 +27,10 @@
 #include <linux/static_key.h>
 #include <net/tcp.h>
 #include <net/inet_common.h>
-#include <net/tcp_authopt.h>
 #include <net/xfrm.h>
 #include <net/busy_poll.h>
+#define CONFIG_TCP_AUTHOPT 1
+#include <net/tcp_authopt.h>
 
 static bool tcp_in_window(u32 seq, u32 end_seq, u32 s_win, u32 e_win)
 {
@@ -859,3 +860,5 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 	return ret;
 }
 EXPORT_SYMBOL(tcp_child_process);
+
+#include "tcp_authopt.c"

@@ -4087,5 +4087,3 @@ void __init tcp_init(void)
 	BUG_ON(tcp_register_congestion_control(&tcp_reno) != 0);
 	tcp_tasklet_init();
 }
-
-#include "tcp_authopt.c"
