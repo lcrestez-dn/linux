@@ -3877,7 +3877,6 @@ int tcp_sig_hash_skb_data(struct ahash_request *req,
 
 	return 0;
 }
-EXPORT_SYMBOL(tcp_md5_hash_skb_data);
 
 int tcp_md5_hash_key(struct tcp_md5sig_pool *hp, const struct tcp_md5sig_key *key)
 {
