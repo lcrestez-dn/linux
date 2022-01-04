@@ -689,8 +689,6 @@ static int tcp_v4_authopt_handle_reply(const struct sock *sk,
  *	Exception: precedence violation. We do not implement it in any case.
  */
 
-<<<<<<<
-=======
 #ifdef CONFIG_TCP_MD5SIG
 #define OPTION_BYTES TCPOLEN_MD5SIG_ALIGNED
 #elif defined(OPTION_BYTES_TCP_AUTHOPT)
@@ -699,14 +697,13 @@ static int tcp_v4_authopt_handle_reply(const struct sock *sk,
 #define OPTION_BYTES sizeof(__be32)
 #endif
 
->>>>>>>
 static void tcp_v4_send_reset(const struct sock *sk, struct sk_buff *skb)
 {
 	const struct tcphdr *th = tcp_hdr(skb);
 	struct {
 		struct tcphdr th;
 #ifdef CONFIG_TCP_MD5SIG
-		__be32 opt[(TCPOLEN_MD5SIG_ALIGNED >> 2)];
+		__be32 opt[(OPTION_BYTES >> 2)];
 #endif
 	} rep;
 	struct ip_reply_arg arg;
@@ -1385,13 +1382,8 @@ EXPORT_SYMBOL(tcp_v4_md5_hash_skb);
 
 /* Called with rcu_read_lock() */
 static bool tcp_v4_inbound_md5_hash(const struct sock *sk,
-<<<<<<<
-				    const struct sk_buff *skb)
-=======
 				    const struct sk_buff *skb,
-				    int dif, int sdif,
 				    const u8 *hash_location)
->>>>>>>
 {
 #ifdef CONFIG_TCP_MD5SIG
 	/*
@@ -1408,15 +1400,6 @@ static bool tcp_v4_inbound_md5_hash(const struct sock *sk,
 
 	hash_expected = tcp_md5_do_lookup(sk, (union tcp_md5_addr *)&iph->saddr,
 					  AF_INET);
-<<<<<<<
-	hash_location = tcp_parse_md5sig_option(th);
-=======
-	 */
-	l3index = sdif ? dif : 0;
-
-	addr = (union tcp_md5_addr *)&iph->saddr;
-	hash_expected = tcp_md5_do_lookup(sk, l3index, addr, AF_INET);
->>>>>>>
 
 	/* We've parsed the options - do we have a hash? */
 	if (!hash_expected && !hash_location)
@@ -2006,11 +1989,7 @@ process:
 		struct sock *nsk;
 
 		sk = req->rsk_listener;
-<<<<<<<
-		if (unlikely(tcp_v4_inbound_md5_hash(sk, skb))) {
-=======
-		if (unlikely(tcp_v4_sig_check_req(req, skb, dif, sdif))) {
->>>>>>>
+		if (unlikely(tcp_v4_sig_check_req(req, skb))) {
 			sk_drops_add(sk, skb);
 			reqsk_put(req);
 			goto discard_it;
@@ -2068,11 +2047,7 @@ process:
 	if (!xfrm4_policy_check(sk, XFRM_POLICY_IN, skb))
 		goto discard_and_relse;
 
-<<<<<<<
-	if (tcp_v4_inbound_md5_hash(sk, skb))
-=======
-	if (tcp_v4_sig_check(sk, skb, dif, sdif))
->>>>>>>
+	if (tcp_v4_sig_check(sk, skb))
 		goto discard_and_relse;
 
 	nf_reset_ct(skb);
