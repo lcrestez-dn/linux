@@ -38,11 +38,7 @@
 #define pr_fmt(fmt) "TCP: " fmt
 
 #include <net/tcp.h>
-<<<<<<<
-=======
-#include <net/mptcp.h>
 #include <net/tcp_authopt.h>
->>>>>>>
 
 #include <linux/compiler.h>
 #include <linux/gfp.h>
@@ -418,20 +414,9 @@ static inline bool tcp_urg_mode(const struct tcp_sock *tp)
 #define OPTION_TS		(1 << 1)
 #define OPTION_MD5		(1 << 2)
 #define OPTION_WSCALE		(1 << 3)
+#define OPTION_AUTHOPT		(1 << 4)
 #define OPTION_FAST_OPEN_COOKIE	(1 << 8)
-<<<<<<<
 #define OPTION_SMC		(1 << 9)
-=======
-
-#define OPTION_SACK_ADVERTISE	BIT(0)
-#define OPTION_TS		BIT(1)
-#define OPTION_MD5		BIT(2)
-#define OPTION_WSCALE		BIT(3)
-#define OPTION_AUTHOPT		BIT(4)
-#define OPTION_FAST_OPEN_COOKIE	BIT(8)
-#define OPTION_SMC		BIT(9)
-#define OPTION_MPTCP		BIT(10)
->>>>>>>
 
 static void smc_options_write(__be32 *ptr, u16 *options)
 {
@@ -453,25 +438,16 @@ struct tcp_out_options {
 	u16 mss;		/* 0 to disable */
 	u8 ws;			/* window scale, 0 to disable */
 	u8 num_sack_blocks;	/* number of SACK blocks to include */
-<<<<<<<
-	u8 hash_size;		/* bytes in hash_location */
-=======
-	u8 bpf_opt_len;		/* length of BPF hdr option */
 #ifdef CONFIG_TCP_AUTHOPT
 	u8 authopt_rnextkeyid;	/* rnextkey */
 #endif
->>>>>>>
 	__u8 *hash_location;	/* temporary pointer, overloaded */
 	__u32 tsval, tsecr;	/* need to include OPTION_TS */
 	struct tcp_fastopen_cookie *fastopen_cookie;	/* Fast open cookie */
-<<<<<<<
-=======
-	struct mptcp_out_options mptcp;
 #ifdef CONFIG_TCP_AUTHOPT
 	struct tcp_authopt_info *authopt_info;
 	struct tcp_authopt_key_info *authopt_key;
 #endif
->>>>>>>
 };
 
 /* Write previously computed TCP options to the packet.
