@@ -3878,6 +3878,14 @@ int tcp_sig_hash_skb_data(struct ahash_request *req,
 	return 0;
 }
 
+int tcp_md5_hash_skb_data(struct tcp_md5sig_pool *hp,
+			  const struct sk_buff *skb,
+			  unsigned int header_len)
+{
+	return tcp_sig_hash_skb_data(hp->md5_req, skb, header_len);
+}
+EXPORT_SYMBOL(tcp_md5_hash_skb_data);
+
 int tcp_md5_hash_key(struct tcp_md5sig_pool *hp, const struct tcp_md5sig_key *key)
 {
 	u8 keylen = READ_ONCE(key->keylen); /* paired with WRITE_ONCE() in tcp_md5_do_add */

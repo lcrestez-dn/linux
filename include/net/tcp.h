@@ -1653,6 +1653,9 @@ static inline void tcp_put_md5sig_pool(void)
 
 int tcp_sig_hash_skb_data(struct ahash_request *, const struct sk_buff *,
 			  unsigned int header_len);
+int tcp_md5_hash_skb_data(struct tcp_md5sig_pool *hp,
+			  const struct sk_buff *skb,
+			  unsigned int header_len);
 int tcp_md5_hash_key(struct tcp_md5sig_pool *hp,
 		     const struct tcp_md5sig_key *key);
 
