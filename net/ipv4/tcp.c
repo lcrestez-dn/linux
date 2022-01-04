@@ -3837,18 +3837,6 @@ struct tcp_md5sig_pool *tcp_get_md5sig_pool(void)
 }
 EXPORT_SYMBOL(tcp_get_md5sig_pool);
 
-int tcp_md5_hash_key(struct tcp_md5sig_pool *hp, const struct tcp_md5sig_key *key)
-{
-	u8 keylen = READ_ONCE(key->keylen); /* paired with WRITE_ONCE() in tcp_md5_do_add */
-	struct scatterlist sg;
-
-	sg_init_one(&sg, key->key, keylen);
-	ahash_request_set_crypt(hp->md5_req, &sg, NULL, keylen);
-
-	/* We use data_race() because tcp_md5_do_add() might change key->key under us */
-	return data_race(crypto_ahash_update(hp->md5_req));
-}
-EXPORT_SYMBOL(tcp_md5_hash_key);
 #endif /* CONFIG_TCP_MD5SIG */
 
 #if defined(CONFIG_TCP_MD5SIG) || defined(CONFIG_TCP_AUTHOPT)
