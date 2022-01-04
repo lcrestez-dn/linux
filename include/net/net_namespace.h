@@ -33,6 +33,14 @@
 #include <net/netns/mpls.h>
 #include <net/netns/can.h>
 #include <net/netns/xdp.h>
+<<<<<<<
+=======
+#include <net/netns/smc.h>
+#include <net/netns/bpf.h>
+#include <net/netns/mctp.h>
+#include <net/netns/tcp_authopt.h>
+#include <net/net_trackers.h>
+>>>>>>>
 #include <linux/ns_common.h>
 #include <linux/idr.h>
 #include <linux/skbuff.h>
@@ -177,10 +185,16 @@ struct net {
 #ifdef CONFIG_XDP_SOCKETS
 	struct netns_xdp	xdp;
 #endif
+<<<<<<<
 #if IS_ENABLED(CONFIG_CRYPTO_USER)
 	struct sock		*crypto_nlsk;
 #endif
 	struct sock		*diag_nlsk;
+=======
+#if IS_ENABLED(CONFIG_TCP_AUTHOPT)
+	struct netns_tcp_authopt	tcp_authopt;
+#endif
+>>>>>>>
 } __randomize_layout;
 
 #include <linux/seq_file_net.h>

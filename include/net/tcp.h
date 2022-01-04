@@ -182,6 +182,11 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOPT_SACK             5       /* SACK Block */
 #define TCPOPT_TIMESTAMP	8	/* Better RTT estimations/PAWS */
 #define TCPOPT_MD5SIG		19	/* MD5 Signature (RFC2385) */
+<<<<<<<
+=======
+#define TCPOPT_AUTHOPT		29	/* Auth Option (RFC5925) */
+#define TCPOPT_MPTCP		30	/* Multipath TCP (RFC6824) */
+>>>>>>>
 #define TCPOPT_FASTOPEN		34	/* Fast open (RFC7413) */
 #define TCPOPT_EXP		254	/* Experimental */
 /* Magic number to be after the option value for sharing TCP
@@ -412,7 +417,29 @@ int tcp_mmap(struct file *file, struct socket *sock,
 void tcp_parse_options(const struct net *net, const struct sk_buff *skb,
 		       struct tcp_options_received *opt_rx,
 		       int estab, struct tcp_fastopen_cookie *foc);
-const u8 *tcp_parse_md5sig_option(const struct tcphdr *th);
+#if defined(CONFIG_TCP_MD5SIG) || defined(CONFIG_TCP_AUTHOPT)
+int tcp_parse_sig_options(const struct tcphdr *th,
+			  const u8 **md5ptr,
+			  const u8 **aoptr);
+#else
+static inline int tcp_parse_sig_options(const struct tcphdr *th,
+			  const u8 **md5ptr,
+			  const u8 **aoptr)
+{
+	*aoptr = NULL;
+	*md5ptr = NULL;
+	return 0;
+}
+#endif
+static inline const u8 *tcp_parse_md5sig_option(const struct tcphdr *th)
+{
+	const u8 *md5, *ao;
+	int ret;
+
+	ret = tcp_parse_sig_options(th, &md5, &ao);
+
+	return (md5 && !ao && !ret) ? md5 : NULL;
+}
 
 /*
  *	BPF SKB-less helpers
@@ -1632,7 +1659,7 @@ static inline void tcp_put_md5sig_pool(void)
 	local_bh_enable();
 }
 
-int tcp_md5_hash_skb_data(struct tcp_md5sig_pool *, const struct sk_buff *,
+int tcp_sig_hash_skb_data(struct ahash_request *, const struct sk_buff *,
 			  unsigned int header_len);
 int tcp_md5_hash_key(struct tcp_md5sig_pool *hp,
 		     const struct tcp_md5sig_key *key);
