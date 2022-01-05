@@ -1856,8 +1856,86 @@ static struct pernet_operations net_ops = {
 	.exit = tcp_authopt_exit_net,
 };
 
+static int tcp_authopt_init_net_all(void)
+{
+	int err;
+
+	err = register_pernet_subsys(&net_ops);
+	if (err)
+		pr_err("failed register_pernet_subsys: %d\n", err);
+
+	return err;
+}
+
+static void tcp_authopt_netns_shadow_destructor(void *obj, void *_shadow)
+{
+	struct net *net = obj;
+	struct tcp_authopt_net_shadow *shadow = _shadow;
+
+	pr_info("%s: leak active net=%p shadow=%p\n", __func__, net, shadow);
+}
+
+static void tcp_authopt_exit_net_all(void)
+{
+	unregister_pernet_subsys(&net_ops);
+	klp_shadow_free_all(TCP_AUTHOPT_NET_SHADOW, tcp_authopt_netns_shadow_destructor);
+}
+
+#if 1
+#include "kpatch-macros.h"
+
+static int tcp_authopt_pre_patch(patch_object *obj)
+{
+	int ret;
+
+	pr_info("%s: pre patch\n", __func__);
+	ret = tcp_authopt_init_net_all();
+	pr_info("%s: pre patch done\n", __func__);
+
+	return ret;
+}
+
+static void tcp_authopt_post_patch(patch_object *obj)
+{
+	pr_info("%s: post patch\n", __func__);
+}
+
+static void tcp_authopt_sock_shadow_destructor(void *obj, void *_shadow)
+{
+	struct sock *sk = obj;
+	struct tcp_authopt_sock_shadow *shadow = _shadow;
+
+	/* We could clear the info but out only goal is to avoid crashes.
+	 * It would also require ensuring normal paths free shadow before info.
+	 */
+	pr_info("%s: leak active sk=%p state=%d shadow=%p info=%p\n",
+			__func__, sk, sk->sk_state, shadow, shadow->info);
+}
+
+static void tcp_authopt_pre_unpatch(patch_object *obj)
+{
+	pr_info("%s: pre unpatch\n", __func__);
+	klp_shadow_free_all(TCP_AUTHOPT_SOCK_SHADOW, tcp_authopt_sock_shadow_destructor);
+	tcp_authopt_exit_net_all();
+	pr_info("%s: pre unpatch done\n", __func__);
+}
+
+static void tcp_authopt_post_unpatch(patch_object *obj)
+{
+	pr_info("%s: post unpatch\n", __func__);
+}
+
+KPATCH_PRE_PATCH_CALLBACK(tcp_authopt_pre_patch);
+KPATCH_POST_PATCH_CALLBACK(tcp_authopt_post_patch);
+KPATCH_PRE_UNPATCH_CALLBACK(tcp_authopt_pre_unpatch);
+KPATCH_POST_UNPATCH_CALLBACK(tcp_authopt_post_unpatch);
+
+#else
+
 static int __init tcp_authopt_init(void)
 {
 	return register_pernet_subsys(&net_ops);
 }
 late_initcall(tcp_authopt_init);
+
+#endif
