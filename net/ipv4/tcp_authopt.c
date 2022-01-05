@@ -201,7 +201,7 @@ static void tcp_authopt_put_mac_pool(struct tcp_authopt_key_info *key,
 
 static inline struct netns_tcp_authopt *sock_net_tcp_authopt(const struct sock *sk)
 {
-	return &sock_net(sk)->tcp_authopt;
+	return &get_tcp_authopt_net_shadow(sock_net(sk))->tcp_authopt;
 }
 
 static void tcp_authopt_key_release_kref(struct kref *ref)
@@ -1626,6 +1626,17 @@ static void print_tcpao_notice(const char *msg, struct sk_buff *skb)
 	}
 }
 
+static inline void inc_shadow_fail_count(struct sock *sk)
+{
+	struct tcp_authopt_net_shadow *sh;
+
+	sh = get_tcp_authopt_net_shadow(sock_net(sk));
+	if (WARN_ONCE(!sh, "missing net shadow"))
+		return;
+
+	atomic64_inc(&sh->fail_count);
+}
+
 int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb,
 				struct tcp_authopt_info *info, const u8 *_opt)
 {
@@ -1642,7 +1653,7 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb,
 	if (!opt && !key)
 		return 0;
 	if (!opt && key) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPAUTHOPTFAILURE);
+		inc_shadow_fail_count(sk);
 		print_tcpao_notice("TCP Authentication Missing", skb);
 		return -EINVAL;
 	}
@@ -1654,7 +1665,7 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb,
 		 * connections.
 		 */
 		if (info->flags & TCP_AUTHOPT_FLAG_REJECT_UNEXPECTED) {
-			NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPAUTHOPTFAILURE);
+			inc_shadow_fail_count(sk);
 			print_tcpao_notice("TCP Authentication Unexpected: Rejected", skb);
 			return -EINVAL;
 		}
@@ -1663,7 +1674,7 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb,
 	}
 	if (opt && !key) {
 		/* Keys are configured for peer but with different keyid than packet */
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPAUTHOPTFAILURE);
+		inc_shadow_fail_count(sk);
 		print_tcpao_notice("TCP Authentication Failed", skb);
 		return -EINVAL;
 	}
@@ -1677,7 +1688,7 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb,
 		return err;
 
 	if (memcmp(macbuf, opt->mac, TCP_AUTHOPT_MACLEN)) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPAUTHOPTFAILURE);
+		inc_shadow_fail_count(sk);
 		print_tcpao_notice("TCP Authentication Failed", skb);
 		return -EINVAL;
 	}
@@ -1718,10 +1729,15 @@ static struct tcp_authopt_key_info *tcp_authopt_get_key_index(struct netns_tcp_a
 	return NULL;
 }
 
+static struct netns_tcp_authopt *seq_file_net_tcp_authopt(struct seq_file *seq)
+{
+	return &get_tcp_authopt_net_shadow(seq_file_net(seq))->tcp_authopt;
+}
+
 static void *tcp_authopt_seq_start(struct seq_file *seq, loff_t *pos)
 	__acquires(RCU)
 {
-	struct netns_tcp_authopt *net = &seq_file_net(seq)->tcp_authopt;
+	struct netns_tcp_authopt *net = seq_file_net_tcp_authopt(seq);
 
 	rcu_read_lock();
 	if (*pos == 0)
@@ -1738,7 +1754,7 @@ static void tcp_authopt_seq_stop(struct seq_file *seq, void *v)
 
 static void *tcp_authopt_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
-	struct netns_tcp_authopt *net = &seq_file_net(seq)->tcp_authopt;
+	struct netns_tcp_authopt *net = seq_file_net_tcp_authopt(seq);
 	void *ret;
 
 	ret = tcp_authopt_get_key_index(net, *pos);
@@ -1800,7 +1816,15 @@ static void __net_exit tcp_authopt_proc_exit_net(struct net *net)
 
 static int tcp_authopt_init_net(struct net *full_net)
 {
-	struct netns_tcp_authopt *net = &full_net->tcp_authopt;
+	struct tcp_authopt_net_shadow *sh;
+	struct netns_tcp_authopt *net;
+
+	sh = klp_shadow_alloc(full_net, TCP_AUTHOPT_NET_SHADOW, sizeof(*sh),
+			      GFP_KERNEL | __GFP_ZERO,
+			      NULL, NULL);
+	if (!sh)
+		return -ENOMEM;
+	net = &sh->tcp_authopt;
 
 	mutex_init(&net->mutex);
 	INIT_HLIST_HEAD(&net->head);
@@ -1810,7 +1834,8 @@ static int tcp_authopt_init_net(struct net *full_net)
 
 static void tcp_authopt_exit_net(struct net *full_net)
 {
-	struct netns_tcp_authopt *net = &full_net->tcp_authopt;
+	struct tcp_authopt_net_shadow *sh = get_tcp_authopt_net_shadow(full_net);
+	struct netns_tcp_authopt *net = &sh->tcp_authopt;
 	struct tcp_authopt_key_info *key;
 	struct hlist_node *n;
 
@@ -1823,6 +1848,7 @@ static void tcp_authopt_exit_net(struct net *full_net)
 	}
 
 	mutex_unlock(&net->mutex);
+	klp_shadow_free(full_net, TCP_AUTHOPT_NET_SHADOW, NULL);
 }
 
 static struct pernet_operations net_ops = {

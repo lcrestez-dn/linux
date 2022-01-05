@@ -146,6 +146,16 @@ static inline struct tcp_authopt_info* get_tcp_tw_authopt_info(struct tcp_timewa
 	return shadow ? shadow->info : NULL;
 }
 
+struct tcp_authopt_net_shadow {
+	struct netns_tcp_authopt tcp_authopt;
+	atomic64_t fail_count;
+};
+#define TCP_AUTHOPT_NET_SHADOW 19861024
+
+static inline struct tcp_authopt_net_shadow* get_tcp_authopt_net_shadow(struct net *net) {
+	return klp_shadow_get(net, TCP_AUTHOPT_NET_SHADOW);
+}
+
 #ifdef CONFIG_TCP_AUTHOPT
 extern int tcp_authopt_needed;
 
