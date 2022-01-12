@@ -1656,9 +1656,9 @@ int __tcp_authopt_inbound_check(struct sock *sk, struct sk_buff *skb,
 	key = tcp_authopt_lookup_recv(sk, skb, net, opt ? opt->keyid : -1, &anykey);
 
 	/* nothing found or expected */
-	if (!opt && !key)
+	if (!opt && !anykey)
 		return 0;
-	if (!opt && key) {
+	if (!opt && anykey) {
 		inc_shadow_fail_count(sk);
 		print_tcpao_notice("TCP Authentication Missing", skb);
 		return -EINVAL;
