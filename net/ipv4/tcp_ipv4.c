@@ -1959,17 +1959,13 @@ process:
 		bool should_drop = false;
 
 		sk = req->rsk_listener;
-		if (!xfrm4_policy_check(req->rsk_listener, XFRM_POLICY_IN, skb)) {
+		if (!xfrm4_policy_check(sk, XFRM_POLICY_IN, skb))
 			drop_reason = SKB_DROP_REASON_XFRM_POLICY;
-			should_drop = true;
-		}
-		if (unlikely(tcp_inbound_md5_hash(sk, skb, &drop_reason,
-						  &iph->saddr, &iph->daddr,
-						  AF_INET, dif, sdif))) {
-			should_drop = true;
-		}
-
-		if (should_drop) {
+		else
+			drop_reason = tcp_inbound_md5_hash(sk, skb,
+						   &iph->saddr, &iph->daddr,
+						   AF_INET, dif, sdif);
+		if (unlikely(drop_reason)) {
 			sk_drops_add(sk, skb);
 			reqsk_put(req);
 			goto discard_it;
@@ -2040,8 +2036,9 @@ process:
 		goto discard_and_relse;
 	}
 
-	if (tcp_inbound_md5_hash(sk, skb, &drop_reason, &iph->saddr,
-				 &iph->daddr, AF_INET, dif, sdif))
+	drop_reason = tcp_inbound_md5_hash(sk, skb, &iph->saddr,
+					   &iph->daddr, AF_INET, dif, sdif);
+	if (drop_reason)
 		goto discard_and_relse;
 
 	nf_reset_ct(skb);
