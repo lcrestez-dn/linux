@@ -755,7 +755,7 @@ int tcp_set_authopt_key(struct sock *sk, char __user *optval, unsigned int optle
 			return -EINVAL;
 	}
 
-	key_info = sock_kmalloc(sk, sizeof(*key_info), GFP_KERNEL | __GFP_ZERO);
+	key_info = kmalloc(sizeof(*key_info), GFP_KERNEL | __GFP_ZERO);
 	if (!key_info)
 		return -ENOMEM;
 	mutex_lock(&net->mutex);
