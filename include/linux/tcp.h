@@ -91,7 +91,8 @@ struct tcp_options_received {
 		sack_ok : 3,	/* SACK seen on SYN packet		*/
 		smc_ok : 1,	/* SMC seen on SYN packet		*/
 		snd_wscale : 4,	/* Window scaling received from sender	*/
-		rcv_wscale : 4;	/* Window scaling to send to receiver	*/
+		rcv_wscale : 4,	/* Window scaling to send to receiver	*/
+		authopt : 1;	/* Received RFC5925 AO			*/
 	u8	num_sacks;	/* Number of SACK blocks		*/
 	u16	user_mss;	/* mss requested by user in ioctl	*/
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
@@ -119,6 +120,7 @@ struct tcp_request_sock {
 	const struct tcp_request_sock_ops *af_specific;
 	u64				snt_synack; /* first SYNACK sent time */
 	bool				tfo_listener;
+	bool				authopt_active;
 	u32				txhash;
 	u32				rcv_isn;
 	u32				snt_isn;

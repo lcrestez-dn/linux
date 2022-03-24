@@ -3868,6 +3868,7 @@ void tcp_parse_options(const struct net *net,
 
 	ptr = (const unsigned char *)(th + 1);
 	opt_rx->saw_tstamp = 0;
+	opt_rx->authopt = 0;
 
 	while (length > 0) {
 		int opcode = *ptr++;
@@ -3944,6 +3945,14 @@ void tcp_parse_options(const struct net *net,
 				 * The MD5 Hash has already been
 				 * checked (see tcp_v{4,6}_do_rcv()).
 				 */
+				break;
+#endif
+#ifdef CONFIG_TCP_AUTHOPT
+			case TCPOPT_AUTHOPT:
+				/* Hash has already been checked.
+				 * We parse rnextkeyid here so we can match it on synack
+				 */
+				opt_rx->authopt = 1;
 				break;
 #endif
 			case TCPOPT_FASTOPEN:
@@ -6664,6 +6673,10 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 
 	if (IS_ENABLED(CONFIG_SMC) && want_cookie)
 		tmp_opt.smc_ok = 0;
+
+#if IS_ENABLED(CONFIG_TCP_AUTHOPT)
+	tcp_rsk(req)->authopt_active = tmp_opt.authopt;
+#endif
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 	tcp_openreq_init(req, &tmp_opt, skb, sk);
