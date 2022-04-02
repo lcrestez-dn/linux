@@ -451,7 +451,7 @@ struct tcp_authopt_key_info *__tcp_authopt_select_key(const struct sock *sk,
 
 		if (info->flags & TCP_AUTHOPT_FLAG_LOCK_KEYID)
 			send_keyid = info->send_keyid;
-		key = tcp_authopt_lookup_send(net, addr_sk, send_keyid);
+		key = tcp_authopt_lookup_send(net, addr_sk, send_keyid, NULL);
 		if (key)
 			*rnextkeyid = key->recv_id;
 
@@ -477,14 +477,14 @@ struct tcp_authopt_key_info *__tcp_authopt_select_key(const struct sock *sk,
 		int send_keyid = info->send_keyid;
 
 		if (!key || key->send_id != send_keyid)
-			new_key = tcp_authopt_lookup_send(net, addr_sk, send_keyid);
+			new_key = tcp_authopt_lookup_send(net, addr_sk, send_keyid, NULL);
 	} else {
 		if (!key || key->send_id != info->recv_rnextkeyid)
-			new_key = tcp_authopt_lookup_send(net, addr_sk, info->recv_rnextkeyid);
+			new_key = tcp_authopt_lookup_send(net, addr_sk, info->recv_rnextkeyid, NULL);
 	}
 	/* If no key found with specific send_id try anything else. */
 	if (!key && !new_key)
-		new_key = tcp_authopt_lookup_send(net, addr_sk, -1);
+		new_key = tcp_authopt_lookup_send(net, addr_sk, -1, NULL);
 
 	/* Update current key only if we hold the socket lock. */
 	if (new_key && key != new_key) {
