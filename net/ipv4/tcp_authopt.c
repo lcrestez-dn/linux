@@ -599,7 +599,7 @@ int tcp_set_authopt(struct sock *sk, char __user *optval, unsigned int optlen)
 	if (err)
 		return err;
 
-	if (opt.flags & ~TCP_AUTHOPT_KNOWN_FLAGS)
+	if (opt.flags & ~(TCP_AUTHOPT_KNOWN_FLAGS | TCP_AUTHOPT_FLAG_ACTIVE))
 		return -EINVAL;
 
 	info = __tcp_authopt_info_get_or_create(sk);
