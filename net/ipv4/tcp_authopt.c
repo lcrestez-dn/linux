@@ -620,7 +620,7 @@ int tcp_get_authopt_val(struct sock *sk, struct tcp_authopt *opt)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_authopt_info *info;
 	struct tcp_authopt_key_info *send_key;
-	bool anykey;
+	bool anykey = false;
 	int err;
 
 	memset(opt, 0, sizeof(*opt));
