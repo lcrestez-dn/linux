@@ -219,7 +219,7 @@ static inline void tcp_authopt_finish_connect(struct sock *sk, struct sk_buff *s
 {
 	struct tcp_authopt_info *info;
 
-	if (tcp_authopt_needed) {
+	if (skb && tcp_authopt_needed) {
 		info = get_tcp_authopt_info(tcp_sk(sk));
 
 		if (info)
