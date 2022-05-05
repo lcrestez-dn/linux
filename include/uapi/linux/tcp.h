@@ -51,7 +51,7 @@ struct tcphdr {
 		fin:1;
 #else
 #error	"Adjust your <asm/byteorder.h> defines"
-#endif	
+#endif
 	__be16	window;
 	__sum16	check;
 	__be16	urg_ptr;
@@ -62,14 +62,14 @@ struct tcphdr {
  *  (union is compatible to any of its members)
  *  This means this part of the code is -fstrict-aliasing safe now.
  */
-union tcp_word_hdr { 
+union tcp_word_hdr {
 	struct tcphdr hdr;
 	__be32 		  words[5];
-}; 
+};
 
-#define tcp_flag_word(tp) ( ((union tcp_word_hdr *)(tp))->words [3]) 
+#define tcp_flag_word(tp) ( ((union tcp_word_hdr *)(tp))->words [3])
 
-enum { 
+enum {
 	TCP_FLAG_CWR = __constant_cpu_to_be32(0x00800000),
 	TCP_FLAG_ECE = __constant_cpu_to_be32(0x00400000),
 	TCP_FLAG_URG = __constant_cpu_to_be32(0x00200000),
@@ -80,7 +80,7 @@ enum {
 	TCP_FLAG_FIN = __constant_cpu_to_be32(0x00010000),
 	TCP_RESERVED_BITS = __constant_cpu_to_be32(0x0F000000),
 	TCP_DATA_OFFSET = __constant_cpu_to_be32(0xF0000000)
-}; 
+};
 
 /*
  * TCP general constants
@@ -130,6 +130,7 @@ enum {
 #define TCP_TX_DELAY		37	/* delay outgoing packets by XX usec */
 #define TCP_AUTHOPT		38	/* TCP Authentication Option (RFC5925) */
 #define TCP_AUTHOPT_KEY		39	/* TCP Authentication Option Key (RFC5925) */
+#define TCP_REPAIR_AUTHOPT	40
 
 
 #define TCP_REPAIR_ON		1
@@ -479,6 +480,24 @@ struct tcp_authopt_key {
 	 * address match is performed.
 	 */
 	int	prefixlen;
+};
+
+/**
+ * struct tcp_authopt_repair - TCP_REPAIR information related to Authentication Option
+ * @src_isn: Local Initial Sequence Number
+ * @dst_isn: Remote Initial Sequence Number
+ * @snd_sne: Sequence Number Extension for Send (upper 32 bits of snd_seq)
+ * @rcv_sne: Sequence Number Extension for Recv (upper 32 bits of rcv_seq)
+ * @snd_seq: Recent Send Sequence Number (lower 32 bits of snd_sne)
+ * @rcv_seq: Recent Recv Sequence Number (lower 32 bits of rcv_sne)
+ */
+struct tcp_authopt_repair {
+	__u32	src_isn;
+	__u32	dst_isn;
+	__u32	snd_sne;
+	__u32	rcv_sne;
+	__u32	snd_seq;
+	__u32	rcv_seq;
 };
 
 #endif /* __GENKSYMS__ */
