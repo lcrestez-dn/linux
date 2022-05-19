@@ -125,6 +125,12 @@ struct tcphdr_authopt {
 	u8 mac[0];
 };
 
+/* Compat with upstream */
+static inline void sk_error_report(struct sock *sk)
+{
+	sk->sk_error_report(sk);
+}
+
 /* Do not use tcp_authopt_info itself as shadow to allow transfer from live to timewait socket. */
 struct tcp_authopt_sock_shadow {
 	struct tcp_authopt_info *info;
