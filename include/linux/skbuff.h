@@ -351,6 +351,10 @@ enum skb_drop_reason {
 					 * corresponding to
 					 * LINUX_MIB_TCPMD5FAILURE
 					 */
+	/**
+	 * @SKB_DROP_REASON_TCP_BOTHAOMD5: Both AO and MD5 found in packet.
+	 */
+	SKB_DROP_REASON_TCP_BOTHAOMD5,
 	SKB_DROP_REASON_MAX,
 };
 
