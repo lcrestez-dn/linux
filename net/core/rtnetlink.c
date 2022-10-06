@@ -5709,3 +5709,226 @@ void __init rtnetlink_init(void)
 	rtnl_register(PF_UNSPEC, RTM_GETSTATS, rtnl_stats_get, rtnl_stats_dump,
 		      0);
 }
+
+
+#include <linux/sort.h>
+#include <kpatch-macros.h>
+
+/** Piggyback on IFLA_PHYS_PORT_ID. Note that '.len' limit was removed */
+static const struct nla_policy bulk_del_ifla_policy[IFLA_MAX+1] = {
+	[IFLA_IFNAME]		= { .type = NLA_STRING, .len = IFNAMSIZ-1 },
+	[IFLA_ADDRESS]		= { .type = NLA_BINARY, .len = MAX_ADDR_LEN },
+	[IFLA_BROADCAST]	= { .type = NLA_BINARY, .len = MAX_ADDR_LEN },
+	[IFLA_MAP]		= { .len = sizeof(struct rtnl_link_ifmap) },
+	[IFLA_MTU]		= { .type = NLA_U32 },
+	[IFLA_LINK]		= { .type = NLA_U32 },
+	[IFLA_MASTER]		= { .type = NLA_U32 },
+	[IFLA_CARRIER]		= { .type = NLA_U8 },
+	[IFLA_TXQLEN]		= { .type = NLA_U32 },
+	[IFLA_WEIGHT]		= { .type = NLA_U32 },
+	[IFLA_OPERSTATE]	= { .type = NLA_U8 },
+	[IFLA_LINKMODE]		= { .type = NLA_U8 },
+	[IFLA_LINKINFO]		= { .type = NLA_NESTED },
+	[IFLA_NET_NS_PID]	= { .type = NLA_U32 },
+	[IFLA_NET_NS_FD]	= { .type = NLA_U32 },
+	/* IFLA_IFALIAS is a string, but policy is set to NLA_BINARY to
+	 * allow 0-length string (needed to remove an alias).
+	 */
+	[IFLA_IFALIAS]		= { .type = NLA_BINARY, .len = IFALIASZ - 1 },
+	[IFLA_VFINFO_LIST]	= {. type = NLA_NESTED },
+	[IFLA_VF_PORTS]		= { .type = NLA_NESTED },
+	[IFLA_PORT_SELF]	= { .type = NLA_NESTED },
+	[IFLA_AF_SPEC]		= { .type = NLA_NESTED },
+	[IFLA_EXT_MASK]		= { .type = NLA_U32 },
+	[IFLA_PROMISCUITY]	= { .type = NLA_U32 },
+	[IFLA_NUM_TX_QUEUES]	= { .type = NLA_U32 },
+	[IFLA_NUM_RX_QUEUES]	= { .type = NLA_U32 },
+	[IFLA_GSO_MAX_SEGS]	= { .type = NLA_U32 },
+	[IFLA_GSO_MAX_SIZE]	= { .type = NLA_U32 },
+	[IFLA_PHYS_PORT_ID]	= { .type = NLA_BINARY, },
+	[IFLA_CARRIER_CHANGES]	= { .type = NLA_U32 },  /* ignored */
+	[IFLA_PHYS_SWITCH_ID]	= { .type = NLA_BINARY, .len = MAX_PHYS_ITEM_ID_LEN },
+	[IFLA_LINK_NETNSID]	= { .type = NLA_S32 },
+	[IFLA_PROTO_DOWN]	= { .type = NLA_U8 },
+	[IFLA_XDP]		= { .type = NLA_NESTED },
+	[IFLA_EVENT]		= { .type = NLA_U32 },
+	[IFLA_GROUP]		= { .type = NLA_U32 },
+	[IFLA_TARGET_NETNSID]	= { .type = NLA_S32 },
+	[IFLA_CARRIER_UP_COUNT]	= { .type = NLA_U32 },
+	[IFLA_CARRIER_DOWN_COUNT] = { .type = NLA_U32 },
+	[IFLA_MIN_MTU]		= { .type = NLA_U32 },
+	[IFLA_MAX_MTU]		= { .type = NLA_U32 },
+};
+
+static int bulk_del_dev_ifindex_cmp(const void *a, const void *b)
+{
+	struct net_device * const *dev1 = a, * const *dev2 = b;
+
+	return (*dev1)->ifindex - (*dev2)->ifindex;
+}
+
+static int bulk_del_rtnl_list_dellink(struct net *net, int *ifindices, int size)
+{
+	const int num_devices = size / sizeof(int);
+	struct net_device **dev_list;
+	LIST_HEAD(list_kill);
+	int i, ret;
+
+	if (size <= 0 || size % sizeof(int)) {
+		pr_err("Invalid size %d\n", size);
+		return -EINVAL;
+	}
+
+	dev_list = kmalloc_array(num_devices, sizeof(*dev_list), GFP_KERNEL);
+	if (!dev_list) {
+		pr_err("Failed to allocate space for %d devices\n", num_devices);
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < num_devices; i++) {
+		const int ifindex = ifindices[i];
+		const struct rtnl_link_ops *ops;
+		struct net_device *dev;
+
+		ret = -ENODEV;
+		dev = __dev_get_by_index(net, ifindex);
+		if (!dev) {
+			pr_err("Unknown ifindex %d\n", ifindex);
+			goto out_free;
+		}
+
+		ret = -EOPNOTSUPP;
+		ops = dev->rtnl_link_ops;
+		if (!ops || !ops->dellink) {
+			pr_err("Device %s (ifindex %d) cannot be deleted\n", dev->name, ifindex);
+			goto out_free;
+		}
+
+		dev_list[i] = dev;
+	}
+
+	/* Sort devices, so we could skip duplicates */
+	sort(dev_list, num_devices, sizeof(*dev_list), bulk_del_dev_ifindex_cmp, NULL);
+
+	for (i = 0; i < num_devices; i++) {
+		struct net_device *dev = dev_list[i];
+
+		/* Skip duplicates */
+		if (i != 0 && dev_list[i - 1]->ifindex == dev->ifindex)
+			continue;
+
+		dev->rtnl_link_ops->dellink(dev, &list_kill);
+	}
+
+	unregister_netdevice_many(&list_kill);
+
+	ret = 0;
+
+out_free:
+	kfree(dev_list);
+
+	return ret;
+}
+
+static int bulk_del_rtnl_ensure_unique_netns(struct nlattr *tb[],
+					     bool netns_id_only)
+{
+
+	if (netns_id_only) {
+		if (!tb[IFLA_NET_NS_PID] && !tb[IFLA_NET_NS_FD])
+			return 0;
+
+		pr_err("specified netns attribute not supported\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (tb[IFLA_TARGET_NETNSID] && (tb[IFLA_NET_NS_PID] || tb[IFLA_NET_NS_FD]))
+		goto invalid_attr;
+
+	if (tb[IFLA_NET_NS_PID] && (tb[IFLA_TARGET_NETNSID] || tb[IFLA_NET_NS_FD]))
+		goto invalid_attr;
+
+	if (tb[IFLA_NET_NS_FD] && (tb[IFLA_TARGET_NETNSID] || tb[IFLA_NET_NS_PID]))
+		goto invalid_attr;
+
+	return 0;
+
+invalid_attr:
+	pr_err("multiple netns identifying attributes specified\n");
+	return -EINVAL;
+}
+
+static int bulk_del_rtnl_dellink(struct sk_buff *skb, struct nlmsghdr *nlh,
+				 struct netlink_ext_ack *extack)
+{
+	struct net *net = sock_net(skb->sk);
+	struct net *tgt_net = net;
+	struct net_device *dev = NULL;
+	struct ifinfomsg *ifm;
+	char ifname[IFNAMSIZ];
+	struct nlattr *tb[IFLA_MAX+1];
+	int err;
+	int netnsid = -1;
+
+	err = nlmsg_parse_deprecated(nlh, sizeof(*ifm), tb, IFLA_MAX,
+				     bulk_del_ifla_policy, extack);
+	if (err < 0)
+		return err;
+
+	err = bulk_del_rtnl_ensure_unique_netns(tb, true);
+	if (err < 0)
+		return err;
+
+	if (tb[IFLA_IFNAME])
+		nla_strlcpy(ifname, tb[IFLA_IFNAME], IFNAMSIZ);
+
+	if (tb[IFLA_TARGET_NETNSID]) {
+		netnsid = nla_get_s32(tb[IFLA_TARGET_NETNSID]);
+		tgt_net = rtnl_get_net_ns_capable(NETLINK_CB(skb).sk, netnsid);
+		if (IS_ERR(tgt_net))
+			return PTR_ERR(tgt_net);
+	}
+
+	err = -EINVAL;
+	ifm = nlmsg_data(nlh);
+	if (ifm->ifi_index > 0)
+		dev = __dev_get_by_index(tgt_net, ifm->ifi_index);
+	else if (tb[IFLA_IFNAME])
+		dev = __dev_get_by_name(tgt_net, ifname);
+	else if (tb[IFLA_GROUP])
+		err = rtnl_group_dellink(tgt_net, nla_get_u32(tb[IFLA_GROUP]));
+	else if (tb[IFLA_PHYS_PORT_ID])
+		err = bulk_del_rtnl_list_dellink(tgt_net, nla_data(tb[IFLA_PHYS_PORT_ID]),
+						 nla_len(tb[IFLA_PHYS_PORT_ID]));
+	else
+		goto out;
+
+	if (!dev) {
+		if (tb[IFLA_IFNAME] || ifm->ifi_index > 0)
+			err = -ENODEV;
+
+		goto out;
+	}
+
+	err = rtnl_delete_link(dev);
+
+out:
+	if (netnsid >= 0)
+		put_net(tgt_net);
+
+	return err;
+}
+
+static void bulk_del_cb_post_patch(patch_object *obj) {
+	/** This triggers a benign WARN_ON due to '->doit' changing.. Works fine though */
+	pr_info("IGNORE THIS WARNING:\n");
+	rtnl_register(PF_UNSPEC, RTM_DELLINK, bulk_del_rtnl_dellink, NULL, 0);
+}
+KPATCH_POST_PATCH_CALLBACK(bulk_del_cb_post_patch);
+
+static void bulk_del_cb_pre_unpatch(patch_object *obj) {
+	/** This triggers a benign WARN_ON due to '->doit' changing.. Works fine though */
+	pr_info("IGNORE THIS WARNING:\n");
+	rtnl_register(PF_UNSPEC, RTM_DELLINK, rtnl_dellink, NULL, 0);
+}
+KPATCH_PRE_UNPATCH_CALLBACK(bulk_del_cb_pre_unpatch);
