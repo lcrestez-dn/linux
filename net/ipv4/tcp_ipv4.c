@@ -1443,11 +1443,17 @@ static bool tcp_v4_inbound_md5_hash(const struct sock *sk,
 
 	if (hash_expected && !hash_location) {
 		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMD5NOTFOUND);
+		net_info_ratelimited("MD5 Hash expected, but not found for (%pI4, %d)->(%pI4, %d)\n",
+					&iph->saddr, ntohs(th->source),
+					&iph->daddr, ntohs(th->dest));
 		return true;
 	}
 
 	if (!hash_expected && hash_location) {
 		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPMD5UNEXPECTED);
+		net_info_ratelimited("MD5 Hash found, but not expected for (%pI4, %d)->(%pI4, %d)\n",
+					&iph->saddr, ntohs(th->source),
+					&iph->daddr, ntohs(th->dest));
 		return true;
 	}
 
