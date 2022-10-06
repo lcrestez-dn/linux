@@ -41,6 +41,9 @@
 
 #include <trace/events/neigh.h>
 
+/** SW-58900 */
+#define NDV_NO_VRF -10
+
 #define NEIGH_DEBUG 1
 #define neigh_dbg(level, fmt, ...)		\
 do {						\
@@ -2528,6 +2531,11 @@ static void neigh_update_notify(struct neighbour *neigh, u32 nlmsg_pid)
 static bool neigh_master_filtered(struct net_device *dev, int master_idx)
 {
 	struct net_device *master;
+
+	/** SW-58900 */
+	if (NDV_NO_VRF == master_idx) {
+		return netif_is_l3_slave(dev);
+	}
 
 	if (!master_idx)
 		return false;
