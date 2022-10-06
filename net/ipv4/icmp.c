@@ -714,6 +714,16 @@ void __icmp_send(struct sk_buff *skb_in, int type, int code, __be32 info,
 		rcu_read_unlock();
 	}
 
+	if (ICMP_DEST_UNREACH == type && ICMP_PORT_UNREACH == code) {
+		struct net_device *dev = NULL;
+
+		rcu_read_lock();
+		dev = dev_get_by_index_rcu(net, inet_iif(skb_in));
+		if (dev)
+			saddr = inet_select_addr(dev, 0, RT_SCOPE_LINK);
+		rcu_read_unlock();
+	}
+
 	tos = icmp_pointers[type].error ? (RT_TOS(iph->tos) |
 					   IPTOS_PREC_INTERNETCONTROL) :
 					   iph->tos;
