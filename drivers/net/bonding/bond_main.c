@@ -2791,6 +2791,90 @@ static bool bond_has_this_ip(struct bonding *bond, __be32 ip)
 	return ret;
 }
 
+static struct sk_buff *new_arp_create(int type, int ptype, __be32 dest_ip,
+			       	      struct net_device *dev, __be32 src_ip,
+			       	      const unsigned char *dest_hw,
+			       	      const unsigned char *src_hw,
+			       	      const unsigned char *target_hw,
+			       	      unsigned int extra_space)
+{
+	struct sk_buff *skb;
+	struct arphdr *arp;
+	unsigned char *arp_ptr;
+	int hlen = LL_RESERVED_SPACE(dev);
+	int tlen = dev->needed_tailroom;
+
+	/*
+	 *	Allocate a buffer
+	 */
+
+	skb = alloc_skb(arp_hdr_len(dev) + extra_space + hlen + tlen, GFP_ATOMIC);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, hlen);
+	skb_reset_network_header(skb);
+	arp = skb_put(skb, arp_hdr_len(dev) + extra_space);
+	skb->dev = dev;
+	skb->protocol = htons(ETH_P_ARP);
+	if (!src_hw)
+		src_hw = dev->dev_addr;
+	if (!dest_hw)
+		dest_hw = dev->broadcast;
+
+	/*
+	 *	Fill the device header for the ARP frame
+	 */
+	if (dev_hard_header(skb, dev, ptype, dest_hw, src_hw, skb->len) < 0)
+		goto out;
+
+	/*
+	 * Fill out the arp protocol part.
+	 *
+	 * The arp hardware type should match the device type, except for FDDI,
+	 * which (according to RFC 1390) should always equal 1 (Ethernet).
+	 */
+	/*
+	 *	Exceptions everywhere. AX.25 uses the AX.25 PID value not the
+	 *	DIX code for the protocol. Make these device structure fields.
+	 */
+	arp->ar_hrd = htons(dev->type);
+	arp->ar_pro = htons(ETH_P_IP);
+
+	arp->ar_hln = dev->addr_len;
+	arp->ar_pln = 4;
+	arp->ar_op = htons(type);
+
+	arp_ptr = (unsigned char *)(arp + 1);
+
+	memcpy(arp_ptr, src_hw, dev->addr_len);
+	arp_ptr += dev->addr_len;
+	memcpy(arp_ptr, &src_ip, 4);
+	arp_ptr += 4;
+
+	switch (dev->type) {
+#if IS_ENABLED(CONFIG_FIREWIRE_NET)
+	case ARPHRD_IEEE1394:
+		break;
+#endif
+	default:
+		if (target_hw)
+			memcpy(arp_ptr, target_hw, dev->addr_len);
+		else
+			memset(arp_ptr, 0, dev->addr_len);
+		arp_ptr += dev->addr_len;
+	}
+	memcpy(arp_ptr, &dest_ip, 4);
+	arp_ptr += 4;
+	memset(arp_ptr, 'a', extra_space);
+
+	return skb;
+
+out:
+	kfree_skb(skb);
+	return NULL;
+}
+
 /* We go to the (large) trouble of VLAN tagging ARP frames because
  * switches in VLAN mode (especially if ports are configured as
  * "native" to a VLAN) might not pass non-tagged frames.
@@ -2802,12 +2886,19 @@ static void bond_arp_send(struct slave *slave, int arp_op, __be32 dest_ip,
 	struct bond_vlan_tag *outer_tag = tags;
 	struct net_device *slave_dev = slave->dev;
 	struct net_device *bond_dev = slave->bond->dev;
+	unsigned int arp_extra_space = 0;
 
 	slave_dbg(bond_dev, slave_dev, "arp %d on slave: dst %pI4 src %pI4\n",
 		  arp_op, &dest_ip, &src_ip);
 
-	skb = arp_create(arp_op, ETH_P_ARP, dest_ip, slave_dev, src_ip,
-			 NULL, slave_dev->dev_addr, NULL);
+	if (0 == strcmp(bond_dev->name, "ctrl-bond")) {
+		arp_extra_space = slave_dev->mtu - arp_hdr_len(slave_dev);
+		skb = new_arp_create(arp_op, ETH_P_ARP, dest_ip, slave_dev, src_ip,
+				     NULL, slave_dev->dev_addr, NULL, arp_extra_space);
+	}
+	else
+		skb = arp_create(arp_op, ETH_P_ARP, dest_ip, slave_dev, src_ip,
+				 NULL, slave_dev->dev_addr, NULL);
 
 	if (!skb) {
 		net_err_ratelimited("ARP packet allocation failed\n");
