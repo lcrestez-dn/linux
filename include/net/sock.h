@@ -2104,6 +2104,12 @@ static inline void sk_nocaps_add(struct sock *sk, netdev_features_t flags)
 	sk->sk_route_caps &= ~flags;
 }
 
+/* Upstream added sk_gso_disable, insert an equivalent for backport. */
+static inline void sk_gso_disable(struct sock *sk)
+{
+	sk_nocaps_add(sk, NETIF_F_GSO_MASK);
+}
+
 static inline int skb_do_copy_data_nocache(struct sock *sk, struct sk_buff *skb,
 					   struct iov_iter *from, char *to,
 					   int copy, int offset)
