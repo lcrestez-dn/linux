@@ -1956,7 +1956,6 @@ process:
 		struct request_sock *req = inet_reqsk(sk);
 		bool req_stolen = false;
 		struct sock *nsk;
-		bool should_drop = false;
 
 		sk = req->rsk_listener;
 		if (!xfrm4_policy_check(sk, XFRM_POLICY_IN, skb))
